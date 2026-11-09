@@ -25,10 +25,21 @@ nothing to do with our code.
    per-download retries (`org.gradle.internal.repository.max.retries=8`, 2 s initial back-off) and
    re-run the build up to 3 times. Completed downloads stay in Gradle's cache, so each retry only
    fetches what's still missing.
+4. **Retries weren't enough.** After merge, the build hit the same 504 on
+   `kotlin-compiler-embeddable-2.2.10.jar` (a different Kotlin version pulled in by
+   `react-native-screens` and `react-native-safe-area-context`) on every retry. Retrying a host that's
+   down for minutes doesn't help; going around it does. From a different network, Maven Central served the 56 MB jar
+   directly, but from GitHub's runners it redirected large JetBrains jars to GitHub release assets.
+   **Fix:** a Gradle init script (`.github/gradle/maven-mirror.gradle`, installed into
+   `~/.gradle/init.d/`) puts Google's Maven Central mirror
+   (`maven-central.storage-download.googleapis.com`, served from Google Cloud Storage, no redirect)
+   *first* in every project's repository list. Gradle tries repositories in order, so Maven Central
+   is only a fallback. Verified locally: the jar resolves from the mirror URL.
 
 **Lesson.** Order matters in CI: a step can't key a cache on files a later step generates. And any
 build that downloads tools at runtime needs retries *and* a cache, because the download is a network
-dependency like any other.
+dependency like any other. When one upstream keeps failing, retries only add delay: add a second
+source (a mirror) so the build doesn't depend on that host at all.
 
 ---
 
