@@ -23,7 +23,7 @@ server or installing Android Studio. ML Kit OCR means Expo Go can't be used (nat
 
 ## Consequences
 - 👍 One tap install on any Android phone; every merge produces a fresh build.
-- 👎 Signed with the **debug keystore**: Android only lets an APK update another with the same signature, and CI runners generate a new debug key each time... except Expo's template ships a fixed `debug.keystore`, so updates install over each other. Not acceptable for the Play Store.
+- 👎 Signed with the **debug keystore** that the React Native template ships. Because it's the same key on every build, a newer APK installs over an older one. But that key is public, so it's fine for testing and unacceptable for the Play Store.
 - 👎 Not for iOS: sideloading isn't possible there; TestFlight via EAS is the route.
 
 ## Revisit when
