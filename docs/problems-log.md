@@ -8,8 +8,8 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ## #7: APK build failed before compiling anything (2026-11-09)
 
-**Situation.** The first runs of the new Android APK workflow failed in under a minute, twice, for
-two unrelated reasons.
+**Situation.** The first runs of the new Android APK workflow failed early, for reasons that had
+nothing to do with our code.
 
 1. **`setup-java` with `cache: gradle` errored.** It looks for `**/*.gradle*` to build a cache key,
    but with Continuous Native Generation `android/` doesn't exist until `expo prebuild` runs, later
@@ -20,6 +20,11 @@ two unrelated reasons.
    **Fix:** a dedicated "Download Gradle" step that retries `./gradlew --version` up to 5 times with
    growing back-off, before the real build. `setup-gradle` then caches the distribution, so later runs
    don't depend on that download at all.
+3. **Then the build itself got a 504** fetching `kotlin-compiler-embeddable-2.2.0.jar`: Maven Central
+   redirected to a JetBrains GitHub release asset, the same flaky host. **Fix:** raise Gradle's
+   per-download retries (`org.gradle.internal.repository.max.retries=8`, 2 s initial back-off) and
+   re-run the build up to 3 times. Completed downloads stay in Gradle's cache, so each retry only
+   fetches what's still missing.
 
 **Lesson.** Order matters in CI: a step can't key a cache on files a later step generates. And any
 build that downloads tools at runtime needs retries *and* a cache, because the download is a network

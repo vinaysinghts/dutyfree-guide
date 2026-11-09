@@ -67,9 +67,22 @@ jobs:
 
       # Release build: JS is bundled into the APK. Signed with the debug keystore,
       # which is fine for installing on your own phone but not for the Play Store.
+      # Dependency downloads hit the same flaky GitHub release-asset hosting
+      # (problems log #7). Gradle retries each download itself (raised from 3 to
+      # 8 tries with back-off); if the build still fails, run it again: files
+      # already downloaded are cached, so each attempt only fetches what's missing.
       - name: Build APK
         working-directory: client/android
-        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a
+        run: |
+          gradle_args="assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a \
+            -Dorg.gradle.internal.repository.max.retries=8 \
+            -Dorg.gradle.internal.repository.initial.backoff=2000"
+          for attempt in 1 2 3; do
+            ./gradlew $gradle_args && exit 0
+            echo "::warning::Gradle build failed (attempt $attempt)"
+            sleep $((attempt * 30))
+          done
+          exit 1
 
       - name: Name the APK
         id: apk
