@@ -9,4 +9,4 @@ trap 'psql -q -c "drop database $db"' EXIT
 psql -q -d "$db" -v ON_ERROR_STOP=1 -f "$here/00_supabase_stubs.sql"
 for f in "$here"/../migrations/*.sql; do psql -q -d "$db" -v ON_ERROR_STOP=1 -f "$f"; done
 psql -q -d "$db" -v ON_ERROR_STOP=1 -f "$here/../seed.sql"
-psql -d "$db" -v ON_ERROR_STOP=1 -f "$here/10_review_flow.sql"
+for t in "$here"/[1-9]*.sql; do echo "== $(basename "$t")"; psql -d "$db" -v ON_ERROR_STOP=1 -f "$t"; done

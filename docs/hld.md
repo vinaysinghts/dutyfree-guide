@@ -17,7 +17,8 @@ before flying, **where on their route each bottle is cheapest**, in their home c
 1. Search for and add the airports on a trip, in order.
 2. See every bottle sold at those airports, cheapest first, with the price at each airport in INR
    and the original currency.
-3. Report a price seen on the shelf; it shows to others only after review.
+3. Report a price by snapping the shelf tag; details are read from the photo, the location is
+   checked against the airport, and it shows to others only after review.
 4. Admins review reports (approve / reject, optionally linking to an existing product).
 
 **Non-functional**
@@ -66,9 +67,14 @@ per bottle and ranks them (`rankProducts`). One round trip; no app server.
 **Write path, scraped.** Daily cron → each active retailer's adapter crawls liquor categories →
 products upserted by `match_key` → a new `prices` row is appended (history kept) → FX rates refreshed.
 
-**Write path, crowd.** App signs in anonymously → uploads optional photo to a private bucket →
-inserts `price_submissions` (status `pending`). Admin approves via `review_submission()`, which
-writes a `prices` row with `source = 'crowd'` under a per-airport "Reported by travellers" retailer.
+**Write path, crowd (photo-first).** The traveller snaps the shelf tag. On the device, OCR reads the
+text (ML Kit on phones, Tesseract in the browser) and `parseShelfTag` turns it into a draft
+(product, size, price, currency). At the same time, the app gets the location (photo EXIF or live
+GPS) and pre-selects the nearest airport. The app signs in anonymously, uploads the photo to a
+private bucket and inserts `price_submissions` with the draft, OCR text and coordinates. A database
+trigger computes the distance to the airport and the `location_check` verdict. An admin reviews it
+(photo, OCR text, location verdict), corrects fields, and approves via `review_submission()`, which
+writes a `prices` row with `source = 'crowd'`.
 
 ## 4. Key decisions (summaries; full reasoning in ADRs)
 
@@ -80,6 +86,8 @@ writes a `prices` row with `source = 'crowd'` under a per-airport "Reported by t
 | [0004](adr/0004-scraping-policy.md) | Polite scraping of facts only | Legal safety vs. some sites may stay unavailable |
 | [0005](adr/0005-product-matching.md) | Rule-based `match_key` for cross-airport matching | Cheap and explainable vs. misses odd naming |
 | [0006](adr/0006-crowd-review-queue.md) | Crowd prices only after human review | Trust vs. slower to appear |
+| [0007](adr/0007-on-device-ocr.md) | Photo-first reports read by on-device OCR | Free and private vs. less accurate than a vision model |
+| [0008](adr/0008-location-verification.md) | Server-computed location check on reports | Cheap fraud signal vs. spoofable, so advisory only |
 
 ## 5. Scaling and failure thinking
 

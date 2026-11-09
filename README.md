@@ -5,11 +5,12 @@ and see every liquor price at those airports' duty-free shops, converted to INR,
 
 | My trip | Prices | Report a price |
 |---|---|---|
-| ![](docs/screenshots/2-trip-route.png) | ![](docs/screenshots/3-prices.png) | ![](docs/screenshots/4-report.png) |
+| ![](docs/screenshots/2-trip-route.png) | ![](docs/screenshots/3-prices.png) | ![](docs/screenshots/5-photo-report.png) |
 
 ## How it works
 - **Prices** come from the airports' online shops (collected once a day) and from travellers who
-  report shelf prices. Reports are reviewed before they appear.
+  snap the shelf tag. The tag is read on the device (OCR), the photo's location is checked against
+  the airport, and a reviewer approves it before it appears.
 - **Currency**: everything is converted to INR with daily ECB rates (Frankfurter).
 - **Stack**: Expo (React Native) for web/iOS/Android · Supabase (Postgres, Auth, Storage) · Python scrapers on GitHub Actions.
 
@@ -22,6 +23,10 @@ npm install
 npm run web          # or: npm run ios / npm run android
 ```
 Without Supabase settings the app runs on built-in sample prices ("Demo mode").
+
+**Phones:** shelf-tag OCR uses Google ML Kit, which isn't in Expo Go. Use a development build:
+`npx expo run:android` / `npx expo run:ios` (or an EAS dev build). The web app needs nothing extra;
+its OCR engine is copied into `client/public/ocr` on `npm install`.
 
 ## Connect a real backend
 1. Create a free project at supabase.com.
