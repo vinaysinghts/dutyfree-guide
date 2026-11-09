@@ -49,6 +49,15 @@ jobs:
       # Caches Gradle downloads between runs, now that android/ exists.
       - uses: gradle/actions/setup-gradle@v4
 
+      # Resolve Maven Central artifacts from Google's mirror first: Maven Central
+      # redirects big Kotlin jars to GitHub release assets, which keep 504ing
+      # (problems log #7, item 4). Init scripts in init.d apply to every build.
+      - name: Use the Maven Central mirror
+        working-directory: .
+        run: |
+          mkdir -p ~/.gradle/init.d
+          cp .github/gradle/maven-mirror.gradle ~/.gradle/init.d/
+
       # The Gradle wrapper downloads Gradle itself (services.gradle.org, which
       # redirects to GitHub release assets). That download has failed with HTTP
       # 504s (problems log #7), so fetch it up front with retries and backoff.
