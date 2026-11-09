@@ -36,13 +36,18 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm, cache-dependency-path: client/package-lock.json }
 
-      - uses: actions/setup-java@v4
-        with: { distribution: temurin, java-version: 17, cache: gradle }
+      # No `cache: gradle` here: android/ doesn't exist until prebuild runs, so
+      # setup-java would find no Gradle files to key the cache on and fail.
+      - uses: actions/setup-java@v5
+        with: { distribution: temurin, java-version: 17 }
 
       - run: npm ci
 
       # Generate the native Android project from app.json (Continuous Native Generation).
       - run: npx expo prebuild --platform android --no-install
+
+      # Caches Gradle downloads between runs, now that android/ exists.
+      - uses: gradle/actions/setup-gradle@v4
 
       # Release build: JS is bundled into the APK. Signed with the debug keystore,
       # which is fine for installing on your own phone but not for the Play Store.
