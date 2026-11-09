@@ -3,6 +3,7 @@
     dutyfree-scrape run                     # all active retailers -> Supabase
     dutyfree-scrape run --dry-run --adapter shopdutyfree --base-url https://bengaluru.shopdutyfree.com
     dutyfree-scrape parse tests/fixtures/x.html --adapter schiphol   # test a saved page
+    dutyfree-scrape probe --adapter schiphol --base-url https://www.schiphol.nl   # live check, stores nothing
 """
 
 from __future__ import annotations
@@ -73,6 +74,18 @@ def cmd_parse(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_probe(args: argparse.Namespace) -> int:
+    from .probe import probe
+
+    client = PoliteClient(delay_seconds=args.delay)
+    try:
+        report = probe(_make_adapter(args.adapter, args.base_url, args.currency), client, Path(args.save_dir))
+    finally:
+        client.close()
+    # Non-zero when no category produced a product, so CI shows it at a glance.
+    return 0 if any(r.get("parsed_products") for r in report) else 1
+
+
 def cmd_airports(args: argparse.Namespace) -> int:
     from .load_airports import load
 
@@ -105,6 +118,14 @@ def main(argv: list[str] | None = None) -> int:
     parse.add_argument("--base-url")
     parse.add_argument("--currency")
     parse.set_defaults(func=cmd_parse)
+
+    probe = sub.add_parser("probe", help="check an adapter against the live site; saves HTML, stores nothing")
+    probe.add_argument("--adapter", choices=sorted(ADAPTERS), required=True)
+    probe.add_argument("--base-url", required=True)
+    probe.add_argument("--currency")
+    probe.add_argument("--delay", type=float, default=5.0)
+    probe.add_argument("--save-dir", default="probe-pages")
+    probe.set_defaults(func=cmd_probe)
 
     airports = sub.add_parser("airports", help="load the OurAirports list into Supabase")
     airports.add_argument("--export", metavar="JSON", help="write the app's offline airport list instead")

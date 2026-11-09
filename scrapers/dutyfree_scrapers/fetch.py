@@ -19,6 +19,7 @@ class PoliteClient:
     def __init__(self, delay_seconds: float = 5.0, timeout: float = 30.0) -> None:
         self.delay = delay_seconds
         self._last_request = 0.0
+        self.last_url: str | None = None
         self._robots: dict[str, urllib.robotparser.RobotFileParser] = {}
         self._client = httpx.Client(
             headers={"User-Agent": USER_AGENT, "Accept-Language": "en"},
@@ -49,6 +50,7 @@ class PoliteClient:
             time.sleep(wait)
         self._last_request = time.monotonic()
         resp = self._client.get(url)
+        self.last_url = str(resp.url)  # after redirects
         resp.raise_for_status()
         return resp.text
 

@@ -13,7 +13,10 @@ pytest
 ## Before enabling the daily run
 The adapters were written without access to the live sites. For each retailer:
 1. Read the site's terms of use and `robots.txt`.
-2. Dry run and inspect the output:
+2. Check the live site: the **Scraper live check** workflow runs
+   `dutyfree-scrape probe` from GitHub's runners on every scraper PR (or from the Actions tab). Per
+   category it reports the HTTP outcome, page title, JSON-LD and parsed product counts and a sample,
+   and uploads the fetched HTML as an artifact. Then a full dry run:
    `dutyfree-scrape run --dry-run --adapter shopdutyfree --base-url https://bengaluru.shopdutyfree.com -v`
 3. If nothing comes back, save a category page (`curl … > page.html`), run
    `dutyfree-scrape parse page.html --adapter shopdutyfree`, fix the selectors / category paths,
