@@ -26,6 +26,12 @@ logged what came back. Three rounds, about five minutes each, because BLR's robo
    JavaScript bot check. Getting past it would mean pretending to be a browser to defeat a
    deliberate block, which ADR-0004 rules out. AMS needs another source (crowd reports, the
    operator's own shop, or a data partnership).
+4. **Then BLR started refusing us too.** About 25 minutes and four probe runs later (roughly 25
+   requests, 30 s apart), Akamai (`server: AkamaiGHost`) answered `403 Access Denied` to every
+   request, robots.txt included. That exposed a bug: `PoliteClient` treated a 403 on robots.txt as
+   "no rules, allow all". The convention (Python's `robotparser`, Google) is that 401/403 means
+   **disallow all**, and it does now. The live check also runs only when adapter code changes, since
+   every run is real traffic to the shop.
 
 **Lesson.** When you can't see the target, build the instrument first. A probe that logs status,
 bot-wall headers, real links and one sample of markup turned "0 products" into three specific,
