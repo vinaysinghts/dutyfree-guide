@@ -19,11 +19,12 @@ class SupabaseStore:
     def __init__(self, url: str | None = None, service_key: str | None = None) -> None:
         url = url or os.environ["SUPABASE_URL"]
         key = service_key or os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-        self._client = httpx.Client(
-            base_url=url.rstrip("/") + "/rest/v1",
-            headers={"apikey": key, "Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-            timeout=60,
-        )
+        headers = {"apikey": key, "Content-Type": "application/json"}
+        # Legacy service_role keys are JWTs and also go in Authorization. The newer
+        # sb_secret_… keys are not JWTs and only belong in the apikey header.
+        if key.startswith("eyJ"):
+            headers["Authorization"] = f"Bearer {key}"
+        self._client = httpx.Client(base_url=url.rstrip("/") + "/rest/v1", headers=headers, timeout=60)
 
     def _post(self, table: str, rows: list[dict], *, on_conflict: str | None = None, returning: bool = False) -> list[dict]:
         prefer = ["resolution=merge-duplicates"] if on_conflict else []
