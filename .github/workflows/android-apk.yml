@@ -1,0 +1,81 @@
+name: Android APK
+
+# Builds a standalone, installable APK (JavaScript bundled in, no laptop or
+# dev server needed) on GitHub's free runners. No Expo account required.
+#
+# - Pull requests touching the app: APK attached to the run as an artifact.
+# - Pushes to main and manual runs: APK also published to the "android-latest"
+#   GitHub Release, which gives a direct download link you can open on a phone.
+on:
+  pull_request:
+    paths: ["client/**", ".github/workflows/android-apk.yml"]
+  push:
+    branches: [main]
+    paths: ["client/**", ".github/workflows/android-apk.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: android-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write # to publish the release on main
+    defaults: { run: { working-directory: client } }
+    env:
+      # Optional: set these repo secrets to point the APK at your Supabase
+      # project. Without them the app runs in demo mode with sample prices.
+      EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: client/package-lock.json }
+
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17, cache: gradle }
+
+      - run: npm ci
+
+      # Generate the native Android project from app.json (Continuous Native Generation).
+      - run: npx expo prebuild --platform android --no-install
+
+      # Release build: JS is bundled into the APK. Signed with the debug keystore,
+      # which is fine for installing on your own phone but not for the Play Store.
+      - name: Build APK
+        working-directory: client/android
+        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a
+
+      - name: Name the APK
+        id: apk
+        run: |
+          short_sha="${GITHUB_SHA::7}"
+          out="dutyfree-guide-${short_sha}.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$out"
+          echo "path=client/$out" >> "$GITHUB_OUTPUT"
+          echo "file=$out" >> "$GITHUB_OUTPUT"
+          ls -lh "$out"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.apk.outputs.file }}
+          path: ${{ steps.apk.outputs.path }}
+          retention-days: 14
+
+      - name: Publish to the android-latest release
+        if: github.event_name != 'pull_request'
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          notes="Built from ${GITHUB_SHA::7} on $(date -u +%Y-%m-%d). Open this page on your Android phone and tap the .apk to install."
+          gh release view android-latest >/dev/null 2>&1 || \
+            gh release create android-latest --title "Android APK (latest)" --notes "$notes" --prerelease --target "$GITHUB_SHA"
+          gh release edit android-latest --notes "$notes"
+          # Replace the previous APK so the release always holds just the latest build.
+          for old in $(gh release view android-latest --json assets --jq '.assets[].name'); do
+            gh release delete-asset android-latest "$old" --yes
+          done
+          gh release upload android-latest "${{ steps.apk.outputs.file }}"
