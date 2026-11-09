@@ -43,21 +43,51 @@ export type RankedProduct = {
   savingInr: number | null;
 };
 
-export type SubmissionInput = {
-  airport_iata: string;
-  product_name: string;
-  brand?: string;
-  volume_ml?: number;
-  price: number;
-  currency: string;
-  note?: string;
-  photoUri?: string;
+export type AirportWithCoords = Airport & { latitude: number; longitude: number };
+
+export type CaptureLocation = {
+  latitude: number;
+  longitude: number;
+  accuracyM?: number;
+  source: 'device' | 'exif';
 };
 
-export type Submission = SubmissionInput & {
+/** A report: either a photo (fields optional, read by OCR) or typed details. */
+export type SubmissionInput = {
+  airport_iata: string;
+  product_name?: string;
+  brand?: string;
+  volume_ml?: number;
+  price?: number;
+  currency?: string;
+  note?: string;
+  photoUri?: string;
+  ocrText?: string;
+  ocrDraft?: unknown;
+  location?: CaptureLocation;
+  photoTakenAt?: string;
+};
+
+export type LocationCheck = 'at_airport' | 'near' | 'far' | 'unknown';
+
+export type Submission = {
   id: number;
+  airport_iata: string;
+  product_name: string | null;
+  brand: string | null;
+  volume_ml: number | null;
+  price: number | null;
+  currency: string | null;
+  note: string | null;
   status: 'pending' | 'approved' | 'rejected';
   created_at: string;
   observed_on: string;
   photo_path: string | null;
+  photo_taken_at: string | null;
+  ocr_text: string | null;
+  location_check: LocationCheck;
+  distance_km: number | null;
+  location_source: 'device' | 'exif' | null;
 };
+
+export type SubmissionEdits = Pick<Submission, 'product_name' | 'brand' | 'volume_ml' | 'price' | 'currency'>;

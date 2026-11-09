@@ -6,6 +6,44 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ---
 
+## #6: OCR engine couldn't be downloaded from public CDNs (2026-11-09)
+
+**Situation.** Tesseract.js by default downloads its WebAssembly core from `cdn.jsdelivr.net` and the
+English model from `tessdata.projectnaptha.com` the first time it runs. Both were blocked in the
+build environment, and the same would happen behind a corporate or airport firewall.
+
+**Fix.** Self-host the assets. `scripts/copy-ocr-assets.js` (runs on `postinstall`) copies the worker,
+the WASM core and the model from npm packages into `public/ocr`, and `ocr.web.ts` points
+`workerPath` / `corePath` / `langPath` there. Only the two LSTM builds of the core are copied (with
+and without SIMD), cutting the folder from 33 MB to 17 MB; a browser downloads ~7 MB once.
+
+**Lesson.** Runtime downloads from third-party CDNs are hidden dependencies: they're a privacy leak,
+an outage risk and a firewall problem. Bundle what you can version.
+
+---
+
+## #5: Real OCR output broke assumptions the unit tests didn't (2026-11-09)
+
+**Situation.** The shelf-tag parser passed hand-written tests on clean text. Rendering two sample tags
+and running real Tesseract on them showed what OCR actually produces:
+- `₹ 4,300` came back as `¥ 4,300`, and the `1000 ml` line disappeared;
+- `€ 32,99 / L` came back as `€3299/L` (decimal comma lost).
+
+The rupee tag produced **no price at all**: `¥` wasn't a known currency, and `4,300` without decimals
+looked like a bare integer, which the parser skips to avoid ABVs, years and article numbers.
+
+**Fix.**
+1. Treat any currency-like symbol (including `¥`) as "this is money", even if we can't map it, and
+   fall back to the airport's currency.
+2. Accept a bare integer when its line says it's a price (`Now`, `Was`, `Our price`).
+3. The per-litre amount was already excluded by its `/L` suffix, so the lost comma didn't matter.
+4. Captured the real OCR strings as regression tests.
+
+**Lesson.** Test parsers on the *actual* upstream output, not on what you imagine it looks like.
+Cheap way to get it: render synthetic inputs and run the real engine once.
+
+---
+
 ## #4: Retailer sites unreachable from the build environment (2026-11-09)
 
 **Situation.** The first adapters (BLR shopdutyfree.com, Schiphol) had to be written without being

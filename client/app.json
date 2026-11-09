@@ -37,7 +37,14 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Attach a photo of the shelf price tag to your price report."
+          "photosPermission": "Pick a photo of a shelf price tag to report its price.",
+          "cameraPermission": "Snap a shelf price tag to report its price."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "We use your location once, when you snap a price tag, to confirm it was taken at the airport."
         }
       ]
     ],

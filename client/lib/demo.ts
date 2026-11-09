@@ -1,17 +1,17 @@
-import type { Airport, PriceRow } from './types';
+import type { AirportWithCoords, PriceRow } from './types';
 
 /** Sample data used when Supabase isn't configured. Prices are illustrative only. */
-export const DEMO_AIRPORTS: Airport[] = [
-  { iata: 'AMS', name: 'Amsterdam Airport Schiphol', city: 'Amsterdam', country_code: 'NL' },
-  { iata: 'BLR', name: 'Kempegowda International Airport', city: 'Bengaluru', country_code: 'IN' },
-  { iata: 'BOM', name: 'Chhatrapati Shivaji Maharaj International Airport', city: 'Mumbai', country_code: 'IN' },
-  { iata: 'DEL', name: 'Indira Gandhi International Airport', city: 'New Delhi', country_code: 'IN' },
-  { iata: 'DOH', name: 'Hamad International Airport', city: 'Doha', country_code: 'QA' },
-  { iata: 'DXB', name: 'Dubai International Airport', city: 'Dubai', country_code: 'AE' },
-  { iata: 'FRA', name: 'Frankfurt Airport', city: 'Frankfurt', country_code: 'DE' },
-  { iata: 'IST', name: 'Istanbul Airport', city: 'Istanbul', country_code: 'TR' },
-  { iata: 'LHR', name: 'London Heathrow Airport', city: 'London', country_code: 'GB' },
-  { iata: 'SIN', name: 'Singapore Changi Airport', city: 'Singapore', country_code: 'SG' },
+export const DEMO_AIRPORTS: AirportWithCoords[] = [
+  { iata: 'AMS', name: 'Amsterdam Airport Schiphol', city: 'Amsterdam', country_code: 'NL', latitude: 52.3086, longitude: 4.7639 },
+  { iata: 'BLR', name: 'Kempegowda International Airport', city: 'Bengaluru', country_code: 'IN', latitude: 13.1979, longitude: 77.7063 },
+  { iata: 'BOM', name: 'Chhatrapati Shivaji Maharaj International Airport', city: 'Mumbai', country_code: 'IN', latitude: 19.0887, longitude: 72.8679 },
+  { iata: 'DEL', name: 'Indira Gandhi International Airport', city: 'New Delhi', country_code: 'IN', latitude: 28.5665, longitude: 77.1031 },
+  { iata: 'DOH', name: 'Hamad International Airport', city: 'Doha', country_code: 'QA', latitude: 25.2731, longitude: 51.6081 },
+  { iata: 'DXB', name: 'Dubai International Airport', city: 'Dubai', country_code: 'AE', latitude: 25.2528, longitude: 55.3644 },
+  { iata: 'FRA', name: 'Frankfurt Airport', city: 'Frankfurt', country_code: 'DE', latitude: 50.0333, longitude: 8.5706 },
+  { iata: 'IST', name: 'Istanbul Airport', city: 'Istanbul', country_code: 'TR', latitude: 41.2753, longitude: 28.7519 },
+  { iata: 'LHR', name: 'London Heathrow Airport', city: 'London', country_code: 'GB', latitude: 51.4706, longitude: -0.4619 },
+  { iata: 'SIN', name: 'Singapore Changi Airport', city: 'Singapore', country_code: 'SG', latitude: 1.3502, longitude: 103.994 },
 ];
 
 const EUR = 95.5;

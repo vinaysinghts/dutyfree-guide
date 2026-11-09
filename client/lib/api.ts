@@ -4,7 +4,8 @@
  */
 import { DEMO_AIRPORTS, DEMO_PRICES } from './demo';
 import { ensureSession, supabase } from './supabase';
-import type { Airport, PriceRow, Submission, SubmissionInput } from './types';
+import { nearestAirport, type GeoPoint } from './geo';
+import type { Airport, AirportWithCoords, PriceRow, Submission, SubmissionEdits, SubmissionInput } from './types';
 
 export async function searchAirports(query: string, limit = 12): Promise<Airport[]> {
   const q = query.trim().toLowerCase();
@@ -38,6 +39,17 @@ export async function pricesAt(iatas: string[]): Promise<PriceRow[]> {
   }));
 }
 
+/** Closest airports to where the user is standing, nearest first. */
+export async function nearestAirports(point: GeoPoint, limit = 3): Promise<(AirportWithCoords & { distance_km: number })[]> {
+  if (!supabase) {
+    const hit = nearestAirport(point, DEMO_AIRPORTS);
+    return hit ? [{ ...hit.airport, distance_km: hit.km }] : [];
+  }
+  const { data, error } = await supabase.rpc('nearest_airports', { lat: point.latitude, lon: point.longitude, max_results: limit });
+  if (error) throw error;
+  return data as (AirportWithCoords & { distance_km: number })[];
+}
+
 export async function submitPrice(input: SubmissionInput): Promise<void> {
   if (!supabase) throw new Error('Price reports need the backend. Set EXPO_PUBLIC_SUPABASE_URL to enable them.');
   const userId = await ensureSession();
@@ -53,13 +65,20 @@ export async function submitPrice(input: SubmissionInput): Promise<void> {
   const { error } = await supabase.from('price_submissions').insert({
     submitted_by: userId,
     airport_iata: input.airport_iata,
-    product_name: input.product_name,
+    product_name: input.product_name || null,
     brand: input.brand || null,
     volume_ml: input.volume_ml ?? null,
-    price: input.price,
-    currency: input.currency,
+    price: input.price ?? null,
+    currency: input.currency || null,
     note: input.note || null,
     photo_path,
+    ocr_text: input.ocrText?.slice(0, 5000) ?? null,
+    ocr_draft: input.ocrDraft ?? null,
+    capture_latitude: input.location?.latitude ?? null,
+    capture_longitude: input.location?.longitude ?? null,
+    capture_accuracy_m: input.location?.accuracyM ?? null,
+    location_source: input.location?.source ?? null,
+    photo_taken_at: input.photoTakenAt ?? null,
   });
   if (error) throw error;
 }
@@ -72,7 +91,18 @@ export async function pendingSubmissions(): Promise<Submission[]> {
     .eq('status', 'pending')
     .order('created_at');
   if (error) throw error;
-  return data as Submission[];
+  return (data as Submission[]).map((s) => ({
+    ...s,
+    price: s.price == null ? null : Number(s.price),
+    distance_km: s.distance_km == null ? null : Number(s.distance_km),
+  }));
+}
+
+/** Reviewer fills in or corrects what OCR read. */
+export async function updateSubmission(id: number, edits: SubmissionEdits): Promise<void> {
+  if (!supabase) return;
+  const { error } = await supabase.from('price_submissions').update(edits).eq('id', id);
+  if (error) throw error;
 }
 
 export async function photoUrl(path: string): Promise<string | null> {

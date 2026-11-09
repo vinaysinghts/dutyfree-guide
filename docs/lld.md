@@ -41,7 +41,7 @@ admins (user_id)
 | `prices` | **Append-only** history (never updated). Gives price charts later for free and makes scrape runs idempotent-ish. |
 | `latest_prices` (view) | `DISTINCT ON (product_id, retailer_id) … ORDER BY observed_at DESC` = the newest row per pair, converted to INR. `security_invoker` so RLS still applies. |
 | `fx_rates` | INR per 1 unit. One row per currency, overwritten daily. |
-| `price_submissions` | Review queue. CHECK constraints bound lengths, volume and price. Partial index on `status='pending'` keeps the queue query fast as history grows. |
+| `price_submissions` | Review queue. Typed fields are optional when `photo_path` is set (CHECK `photo_or_details`). Stores `ocr_text`, `ocr_draft`, capture coordinates, `photo_taken_at`, and the trigger-computed `distance_km` / `location_check`. Partial index on `status='pending'` keeps the queue query fast. |
 | `admins` | Membership table read by `is_admin()`. |
 
 ### Row level security (RLS)
@@ -92,8 +92,31 @@ for each category URL:
 **Why JSON-LD first:** schema.org `Product` data exists for Google Shopping, so retailers keep it
 stable; CSS class names change with every redesign.
 
-### 3.4 Review: `review_submission(p_submission_id, p_approve, p_note, p_existing_product_id)`
-Locks the row (`FOR UPDATE`) so two admins can't double-approve; rejects non-pending; on approve,
+### 3.4 Shelf-tag parsing: `client/lib/shelfTag.ts → parseShelfTag(ocrText, {defaultCurrency})`
+1. Split OCR text into lines.
+2. Find every money-looking amount: an optional currency symbol or code, a number in any common
+   format (`32,99`, `3,450`, `3.450,00`), and an optional trailing symbol. Skip bare integers unless the
+   line says it's a price (`Now 4,300`), and skip amounts followed by `%`, `ml`, `cl` or `years`.
+3. Classify each amount by its neighbours: `per_unit` (`/L`, `per 100ml`), `multibuy` (`2 for`),
+   `was` (`was`, `RRP`, `MRP`, `high street`), `now` (`now`, `our price`), else `price`.
+4. Choose: the lowest `now`; otherwise the lowest plain `price`, preferring ones with a currency
+   (a duty-free tag that shows two plain prices is nearly always "high street vs ours").
+5. Size: the last volume token. Brand: the longest known-brand match, ignoring accents and apostrophes.
+   Product: the text after the brand on its line, else the next line.
+6. Confidence = 0.45 price + 0.15 currency + 0.15 size + 0.15 brand + 0.1 product. Under 0.6, the form opens for review.
+
+Platform OCR sits behind one function, `readText(uri)`: `ocr.ts` (ML Kit) and `ocr.web.ts`
+(Tesseract); Metro picks the file by platform extension. The parser never knows which engine ran.
+
+### 3.5 Location check (DB trigger `price_submissions_check_location`)
+On insert, or when the airport or coordinates change: haversine distance from the capture point
+to the airport, giving `at_airport` ≤ 5 km, `near` ≤ 50 km, else `far`; no coordinates gives `unknown`.
+The trigger also fires when a client tries to write `location_check` directly, so the client can't
+choose the verdict. `nearest_airports(lat, lon)` filters to a ±1° latitude band before computing
+distances, then sorts.
+
+### 3.6 Review: `review_submission(p_submission_id, p_approve, p_note, p_existing_product_id)`
+Refuses to approve until product, price and currency are filled in (OCR may have left gaps). Locks the row (`FOR UPDATE`) so two admins can't double-approve; rejects non-pending; on approve,
 links to the given product or creates one, upserts the airport's "Reported by travellers"
 retailer and inserts a `prices` row with `source='crowd'`.
 
@@ -107,6 +130,9 @@ retailer and inserts a `prices` row with `source='crowd'`.
 | `lib/compare.ts` | Pure ranking logic (above). |
 | `components/AgeGate.tsx` | 18+ confirmation, required by app stores for alcohol content. |
 | `components/AirportSearch.tsx` | 200 ms debounced search; cancels stale responses. |
+| `lib/shelfTag.ts` | OCR text to report draft (§3.4). Pure, tested on real OCR output. |
+| `lib/ocr.ts` / `lib/ocr.web.ts` | `readText(uri)` via ML Kit (native) or self-hosted Tesseract (web). |
+| `lib/geo.ts` | Haversine distance, nearest airport, EXIF GPS and timestamp parsing. |
 
 ## 5. Interfaces
 
