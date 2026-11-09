@@ -26,10 +26,20 @@ class FakeClient:
 
 
 def test_probe_reports_each_outcome_and_saves_pages(tmp_path):
-    report = probe(SchipholAdapter("https://www.schiphol.nl"), FakeClient(), tmp_path)
+    report = probe(SchipholAdapter("https://www.schiphol.nl"), FakeClient(), tmp_path, home=False)
     assert report[0]["outcome"] == "ok" and report[0]["parsed_products"] > 0
     assert report[0]["sample"][0]["name"]
     assert report[1]["outcome"] == "robots.txt disallows"
     assert report[2]["outcome"] == "HTTP 403"
     # The OK page and the 403 body are both kept for debugging.
     assert len(list(tmp_path.glob("*.html"))) == len(report) - 1
+
+
+def test_diagnose_lists_liquor_links_and_product_classes():
+    from dutyfree_scrapers.probe import diagnose
+
+    html = """<html><title>Shop</title><a href="/en/92/wines-spirits/whisky">Whisky</a>
+    <a href="/en/beauty">Beauty</a><div class="product-tile x"></div><div class="product-tile"></div></html>"""
+    d = diagnose(html, "https://x")
+    assert d["liquor_links"] == [["/en/92/wines-spirits/whisky", "Whisky"]] or d["liquor_links"] == [("/en/92/wines-spirits/whisky", "Whisky")]
+    assert d["product_classes"][0] == ("product-tile", 2)
