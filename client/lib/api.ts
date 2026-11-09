@@ -2,28 +2,21 @@
  * Data access for the app. Every screen goes through these functions, never
  * through Supabase directly, so the backend can change without touching UI.
  */
-import { DEMO_AIRPORTS, DEMO_PRICES } from './demo';
+import { searchAirportList } from './airportSearch';
+import { allAirports } from './airports';
+import { DEMO_PRICES } from './demo';
 import { ensureSession, supabase } from './supabase';
 import { nearestAirport, type GeoPoint } from './geo';
 import type { Airport, AirportWithCoords, PriceRow, Submission, SubmissionEdits, SubmissionInput } from './types';
 
+/**
+ * Airport search runs on the bundled OurAirports list in every mode: it's static
+ * reference data (~320 KB), so searching on the device is instant and works
+ * offline at the gate. The database holds the same list for foreign keys and
+ * nearest_airports(). Matching rules: lib/airportSearch.ts.
+ */
 export async function searchAirports(query: string, limit = 12): Promise<Airport[]> {
-  const q = query.trim().toLowerCase();
-  if (q.length < 2) return [];
-  if (!supabase) {
-    return DEMO_AIRPORTS.filter((a) => `${a.iata} ${a.name} ${a.city ?? ''}`.toLowerCase().includes(q)).slice(0, limit);
-  }
-  // An exact IATA code match ranks first, then name/city matches.
-  const safe = q.replace(/[%_,()]/g, ' ');
-  const { data, error } = await supabase
-    .from('airports')
-    .select('iata, name, city, country_code')
-    .ilike('search_text', `%${safe}%`)
-    .limit(limit * 2);
-  if (error) throw error;
-  return (data as Airport[])
-    .sort((a, b) => Number(b.iata.toLowerCase() === q) - Number(a.iata.toLowerCase() === q))
-    .slice(0, limit);
+  return searchAirportList(allAirports(), query, limit);
 }
 
 export async function pricesAt(iatas: string[]): Promise<PriceRow[]> {
@@ -42,7 +35,7 @@ export async function pricesAt(iatas: string[]): Promise<PriceRow[]> {
 /** Closest airports to where the user is standing, nearest first. */
 export async function nearestAirports(point: GeoPoint, limit = 3): Promise<(AirportWithCoords & { distance_km: number })[]> {
   if (!supabase) {
-    const hit = nearestAirport(point, DEMO_AIRPORTS);
+    const hit = nearestAirport(point, allAirports());
     return hit ? [{ ...hit.airport, distance_km: hit.km }] : [];
   }
   const { data, error } = await supabase.rpc('nearest_airports', { lat: point.latitude, lon: point.longitude, max_results: limit });

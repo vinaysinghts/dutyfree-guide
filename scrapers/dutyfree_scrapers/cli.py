@@ -76,6 +76,12 @@ def cmd_parse(args: argparse.Namespace) -> int:
 def cmd_airports(args: argparse.Namespace) -> int:
     from .load_airports import load
 
+    if args.export:
+        from .load_airports import export_bundle
+
+        n = export_bundle(Path(args.export), Path(args.csv) if args.csv else None)
+        print(f"wrote {n} airports to {args.export}")
+        return 0
     load()
     return 0
 
@@ -101,6 +107,8 @@ def main(argv: list[str] | None = None) -> int:
     parse.set_defaults(func=cmd_parse)
 
     airports = sub.add_parser("airports", help="load the OurAirports list into Supabase")
+    airports.add_argument("--export", metavar="JSON", help="write the app's offline airport list instead")
+    airports.add_argument("--csv", help="read a saved OurAirports airports.csv instead of downloading it")
     airports.set_defaults(func=cmd_airports)
 
     args = parser.parse_args(argv)
