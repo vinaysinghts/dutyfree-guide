@@ -1,0 +1,102 @@
+# High-level design (HLD)
+
+> **What an HLD is for:** it answers "what are the big boxes, how do they talk, and why this shape?"
+> It deliberately skips class names and function signatures; those live in the [LLD](lld.md).
+> A reviewer should be able to read this in five minutes and challenge the architecture.
+
+## 1. Problem
+
+A traveller passes through several airports on one trip (origin, layovers, destination). The
+same bottle can cost very different amounts at each. Example: Johnnie Walker Black Label 1L costs
+₹3,450 at Bengaluru (BLR) but €32.99 (about ₹3,150) at Amsterdam (AMS). The traveller wants to see,
+before flying, **where on their route each bottle is cheapest**, in their home currency (INR).
+
+## 2. Requirements
+
+**Functional**
+1. Search for and add the airports on a trip, in order.
+2. See every bottle sold at those airports, cheapest first, with the price at each airport in INR
+   and the original currency.
+3. Report a price seen on the shelf; it shows to others only after review.
+4. Admins review reports (approve / reject, optionally linking to an existing product).
+
+**Non-functional**
+| Concern | Target | Why it matters here |
+|---|---|---|
+| Freshness | Prices updated daily | Duty-free prices change weekly at most; daily is plenty and keeps scraping polite |
+| Latency | Price list < 1 s for a 3-airport trip | Users check this at the gate on mobile data |
+| Cost | ~₹0 at MVP scale | Free tiers: Supabase, GitHub Actions, Frankfurter FX |
+| Trust | Crowd data never shown unreviewed | One fake ₹1 price would destroy credibility |
+| Legal | Facts only, no copied images/text, honour robots.txt | See [ADR-0004](adr/0004-scraping-policy.md) |
+| Platforms | Web, iOS, Android from one codebase | One developer maintaining it |
+
+**Out of scope for MVP:** flight-number lookup, accounts beyond anonymous sessions, price alerts,
+customs-allowance warnings.
+
+## 3. Architecture
+
+```
+                    ┌────────────────────────── Supabase ──────────────────────────┐
+                    │                                                              │
+  ┌──────────────┐  │  ┌───────────────┐   ┌────────────────────────────────────┐  │
+  │ Expo app     │──┼─▶│ PostgREST API │──▶│ Postgres                           │  │
+  │ web/iOS/And. │  │  │ (auto REST)   │   │  airports, retailers, products,    │  │
+  │              │  │  └───────────────┘   │  prices (history), fx_rates,       │  │
+  │ anon key +   │  │  ┌───────────────┐   │  price_submissions, trips          │  │
+  │ RLS          │──┼─▶│ Auth (anon    │   │  view: latest_prices (in INR)      │  │
+  │              │  │  │ sessions)     │   │  fn:   review_submission()         │  │
+  │              │  │  └───────────────┘   └────────────────────────────────────┘  │
+  │              │──┼─▶ Storage (shelf-tag photos, private bucket)  ▲             │
+  └──────────────┘  └──────────────────────────────────────────────┼──────────────┘
+                                                                    │ service-role key
+                         ┌──────────────────────────────────────────┴───────┐
+                         │ Python scrapers (GitHub Actions cron, daily)     │
+                         │  adapters: shopdutyfree (BLR + other Avolta      │
+                         │  airports), schiphol (AMS) ── polite HTTP ──▶ retailer sites
+                         │  fx: Frankfurter (ECB rates) ──────────────▶ api.frankfurter.dev
+                         └──────────────────────────────────────────────────┘
+```
+
+### Main flows
+
+**Read path (hot path).** App → `GET /latest_prices?airport_iata=in.(AMS,BLR,DXB)` → Postgres view
+picks the newest price per (product, retailer) and multiplies by today's FX rate → app groups rows
+per bottle and ranks them (`rankProducts`). One round trip; no app server.
+
+**Write path, scraped.** Daily cron → each active retailer's adapter crawls liquor categories →
+products upserted by `match_key` → a new `prices` row is appended (history kept) → FX rates refreshed.
+
+**Write path, crowd.** App signs in anonymously → uploads optional photo to a private bucket →
+inserts `price_submissions` (status `pending`). Admin approves via `review_submission()`, which
+writes a `prices` row with `source = 'crowd'` under a per-airport "Reported by travellers" retailer.
+
+## 4. Key decisions (summaries; full reasoning in ADRs)
+
+| # | Decision | Main trade-off |
+|---|---|---|
+| [0001](adr/0001-expo-single-codebase.md) | Expo / React Native for web + mobile | One codebase vs. weaker web SEO than Next.js |
+| [0002](adr/0002-supabase-backend.md) | Supabase (Postgres + RLS) with no custom API server | Speed and cost vs. logic living in SQL |
+| [0003](adr/0003-python-scrapers-adapter-pattern.md) | Python scrapers, one adapter per retailer platform | Simple daily batch vs. no real-time prices |
+| [0004](adr/0004-scraping-policy.md) | Polite scraping of facts only | Legal safety vs. some sites may stay unavailable |
+| [0005](adr/0005-product-matching.md) | Rule-based `match_key` for cross-airport matching | Cheap and explainable vs. misses odd naming |
+| [0006](adr/0006-crowd-review-queue.md) | Crowd prices only after human review | Trust vs. slower to appear |
+
+## 5. Scaling and failure thinking
+
+- **Read load** is tiny per request (a few hundred rows). If it grows: add an index-only
+  materialized view refreshed after each scrape, and cache at the CDN (prices change daily).
+- **One retailer's site changes markup** → that adapter returns 0 products → the run marks the job
+  failed (non-zero exit) and GitHub emails us; other retailers still save. Old prices remain visible
+  with their date, so the app degrades instead of breaking.
+- **FX API down** → yesterday's rates stay in `fx_rates`; a missing currency shows "No INR rate yet"
+  and sorts last instead of being wrongly ranked.
+- **Abuse of crowd reports** → RLS limits inserts to the user's own rows; nothing is public until
+  approved; length/range CHECK constraints reject garbage at the database.
+
+## 6. What a staff engineer would watch next
+
+1. Matching quality is the product's real moat. Measure it (% of products seen at ≥2 airports) and
+   move to fuzzy matching or a curated catalogue when it plateaus.
+2. Partnerships: a retailer feed beats scraping on reliability and legality. Scraping is the bootstrap.
+3. SEO landing pages ("cheapest Black Label at AMS") would be the growth channel. That's the trigger
+   to revisit ADR-0001 (Next.js for the web).
