@@ -23,6 +23,7 @@ from .jsonld import products_from_jsonld
 
 
 LIQUOR_LINK_RE = re.compile(r"whisk|spirit|liquor|liqueur|wine|vodka|gin\b|rum\b|cognac|brandy|tequila|champagne", re.I)
+CARD_PROBES = ["li.product-item", ".product-item", "[data-product-id]", ".product-item-info", ".product-tile", ".product-card"]
 APP_STATE_MARKERS = ["__NEXT_DATA__", "__NUXT__", "window.__INITIAL_STATE__", "application/ld+json", "data-product", "ng-version"]
 
 
@@ -36,7 +37,16 @@ def diagnose(html: str, base_url: str) -> dict:
         href = a["href"]
         if LIQUOR_LINK_RE.search(href) or LIQUOR_LINK_RE.search(text):
             links.setdefault(href, text)
+    card_counts = {sel: len(soup.select(sel)) for sel in CARD_PROBES}
+    first_card = next((soup.select_one(sel) for sel in CARD_PROBES if soup.select_one(sel)), None)
+    pager = soup.select_one(".pages, .pagination, .toolbar-products, nav[aria-label*=agination]")
     return {
+        "card_counts": card_counts,
+        # One real card's markup is what the CSS fallback has to be written against.
+        "first_card_html": re.sub(r"\s+", " ", str(first_card))[:3000] if first_card else None,
+        "pager_html": re.sub(r"\s+", " ", str(pager))[:1200] if pager else None,
+        "rel_next": (soup.find("link", rel="next") or {}).get("href") if soup.find("link", rel="next") else None,
+        "jsonld_types": sorted({m for m in re.findall(r'"@type"\s*:\s*"(\w+)"', html)})[:20],
         "title": soup.title.get_text(strip=True)[:120] if soup.title else None,
         "bytes": len(html),
         "markers": [m for m in APP_STATE_MARKERS if m in html],
@@ -85,7 +95,9 @@ def probe(adapter, client: PoliteClient, save_dir: Path, sample: int = 3, home: 
             row["parsed_products"] = len(products)
             row["sample"] = [p.as_json() for p in products[:sample]]
             if not products:
-                row.update(diagnose(html, adapter.base_url))
+                d = diagnose(html, adapter.base_url)
+                d.pop("liquor_links", None)
+                row.update(d)
         report.append(row)
         print(json.dumps(row, ensure_ascii=False), flush=True)
     return report

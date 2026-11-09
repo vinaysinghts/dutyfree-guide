@@ -17,16 +17,11 @@ from ..normalize import detect_currency, parse_price, parse_volume_ml
 from ._html import absolute, first_attr, first_text, rel_next, with_page_param
 from .base import Adapter
 
+# Real paths from the live BLR home page (Scraper live check, 2026-11-09). The
+# "92" segment is the store id; "view-all-liquor" covers every spirits and wine
+# subcategory, so one listing is enough.
 LIQUOR_CATEGORIES = [
-    "/en/liquor/whisky",
-    "/en/liquor/spirits/vodka",
-    "/en/liquor/spirits/rum",
-    "/en/liquor/spirits/gin",
-    "/en/liquor/spirits/tequila-mezcal",
-    "/en/liquor/brandy-cognac",
-    "/en/liquor/liqueurs",
-    "/en/liquor/wine",
-    "/en/liquor/champagne-sparkling-wine",
+    "/en/92/wines-spirits/view-all-liquor",
 ]
 
 CARD_SELECTORS = ["[data-product-id]", ".product-item", ".product-tile", ".product-card"]
