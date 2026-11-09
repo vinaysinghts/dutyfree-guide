@@ -49,6 +49,22 @@ jobs:
       # Caches Gradle downloads between runs, now that android/ exists.
       - uses: gradle/actions/setup-gradle@v4
 
+      # The Gradle wrapper downloads Gradle itself (services.gradle.org, which
+      # redirects to GitHub release assets). That download has failed with HTTP
+      # 504s (problems log #7), so fetch it up front with retries and backoff.
+      # After the first success, setup-gradle caches it and this is instant.
+      - name: Download Gradle (with retries)
+        working-directory: client/android
+        run: |
+          for attempt in 1 2 3 4 5; do
+            ./gradlew --version --no-daemon && exit 0
+            wait=$((attempt * attempt * 10))
+            echo "::warning::Gradle download failed (attempt $attempt), retrying in ${wait}s"
+            sleep "$wait"
+          done
+          echo "::error::Could not download Gradle after 5 attempts"
+          exit 1
+
       # Release build: JS is bundled into the APK. Signed with the debug keystore,
       # which is fine for installing on your own phone but not for the Play Store.
       - name: Build APK

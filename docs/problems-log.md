@@ -6,6 +6,27 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ---
 
+## #7: APK build failed before compiling anything (2026-11-09)
+
+**Situation.** The first runs of the new Android APK workflow failed in under a minute, twice, for
+two unrelated reasons.
+
+1. **`setup-java` with `cache: gradle` errored.** It looks for `**/*.gradle*` to build a cache key,
+   but with Continuous Native Generation `android/` doesn't exist until `expo prebuild` runs, later
+   in the job. **Fix:** drop the cache option there and add `gradle/actions/setup-gradle` *after* prebuild.
+2. **The Gradle wrapper got HTTP 504** downloading `gradle-9.4.1-bin.zip`. It failed again on a re-run
+   a minute later. Tracing the URL: `services.gradle.org` redirects to a GitHub release asset, and that
+   hop was timing out intermittently (the same URL returned 206 when probed later from elsewhere).
+   **Fix:** a dedicated "Download Gradle" step that retries `./gradlew --version` up to 5 times with
+   growing back-off, before the real build. `setup-gradle` then caches the distribution, so later runs
+   don't depend on that download at all.
+
+**Lesson.** Order matters in CI: a step can't key a cache on files a later step generates. And any
+build that downloads tools at runtime needs retries *and* a cache, because the download is a network
+dependency like any other.
+
+---
+
 ## #6: OCR engine couldn't be downloaded from public CDNs (2026-11-09)
 
 **Situation.** Tesseract.js by default downloads its WebAssembly core from `cdn.jsdelivr.net` and the
