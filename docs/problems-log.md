@@ -6,6 +6,34 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ---
 
+## #9: First contact with the live shop sites (2026-11-09)
+
+**Situation.** The adapters had been written blind (#4). A new `dutyfree-scrape probe` command,
+run by the **Scraper live check** workflow from GitHub's runners, fetched every category page and
+logged what came back. Three rounds, about five minutes each, because BLR's robots.txt asks for
+30 s between requests.
+
+**What we learned.**
+1. **BLR (Avolta, Magento):** every guessed category URL was a 404. The probe also logs the
+   home page's liquor links, which showed the real listing: `/en/92/wines-spirits/view-all-liquor`
+   (92 is the store id).
+2. That page had 40 product cards, but we parsed 0. Logging one card's HTML showed why:
+   `[data-product-id]`, our first card selector, sits on the *price box*, not the card, so no
+   "card" had a name. Fix: select `li.product-item`, read the `finalPrice` amount (the sale price,
+   not the crossed-out one), and take the product link rather than the first `<a>` (a wishlist
+   button with `href="#"`). Sizes missing from a name come from the URL slug (`…-20cl`).
+3. **AMS (Schiphol):** every request got `403` with `cf-mitigated: challenge`, Cloudflare's
+   JavaScript bot check. Getting past it would mean pretending to be a browser to defeat a
+   deliberate block, which ADR-0004 rules out. AMS needs another source (crowd reports, the
+   operator's own shop, or a data partnership).
+
+**Lesson.** When you can't see the target, build the instrument first. A probe that logs status,
+bot-wall headers, real links and one sample of markup turned "0 products" into three specific,
+fixable causes. Also read headers before guessing: `cf-mitigated` says "blocked on purpose",
+which is a policy question, not a bug.
+
+---
+
 ## #8: Basel airport couldn't be found (2026-11-09)
 
 **Situation.** A user searched for Basel and got nothing.

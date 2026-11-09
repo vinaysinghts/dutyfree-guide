@@ -33,6 +33,11 @@ NAME_SELECTORS = [".product-item-name", ".product-name", ".product-title", "h2",
 PRICE_SELECTORS = ['[data-price-type="finalPrice"][data-price-amount]', "[data-price-amount]", ".price .value", ".price", ".product-price"]
 
 
+def _slug_words(url: str | None) -> str | None:
+    """'/en/92/johnnie-walker-black-label-1l' -> 'johnnie walker black label 1l'."""
+    return url.rstrip("/").rsplit("/", 1)[-1].replace("-", " ") if url else None
+
+
 class ShopDutyFreeAdapter(Adapter):
     slug = "shopdutyfree"
     currency = "INR"
@@ -58,13 +63,18 @@ class ShopDutyFreeAdapter(Adapter):
             price = parse_price(price_text)
             if not name or price is None:
                 continue
+            link = first_attr(card, ["a.product-item-link[href]", "a.product-item-photo[href]", "a[href]:not([href='#'])"], "href")
             products.append(ScrapedProduct(
                 name=name,
                 brand=first_text(card, [".product-brand", ".brand"]),
                 price=price,
                 currency=detect_currency(price_text, self.currency) if not amount else self.currency,
-                url=absolute(self.base_url, first_attr(card, ["a[href]"], "href")),
-                volume_ml=parse_volume_ml(name) or parse_volume_ml(first_text(card, [".product-size", ".size"])),
+                # The first <a> in a card is the wishlist button (href="#"), so name the product link.
+                url=absolute(self.base_url, link),
+                # Some names omit the size; the product URL usually ends in it ("…-whisky-1l").
+                volume_ml=(parse_volume_ml(name)
+                           or parse_volume_ml(first_text(card, [".product-size", ".size"]))
+                           or parse_volume_ml(_slug_words(link))),
                 image_url=first_attr(card, ["img[data-src]"], "data-src") or first_attr(card, ["img"], "src"),
             ))
         return products

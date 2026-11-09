@@ -59,12 +59,14 @@ def test_crawl_stops_when_pages_repeat():
 
 def test_shopdutyfree_live_magento_card():
     adapter = ADAPTERS["shopdutyfree"]("https://bengaluru.shopdutyfree.com")
-    [p] = adapter.parse_listing(read("shopdutyfree_magento.html"))
+    p, mini = adapter.parse_listing(read("shopdutyfree_magento.html"))
     assert p.brand == "Johnnie Walker"
     assert p.name == "Gold Label Reserve Blended Scotch Whisky 1l"
     # The sale (finalPrice) price, not the crossed-out oldPrice.
     assert p.price == Decimal("5450") and p.currency == "INR" and p.volume_ml == 1000
     assert p.url.endswith("/johnnie-walker-gold-label-reserve-blended-scotch-whisky-1l")
+    # Wishlist href="#" comes first in the card; the product link must win. Size from the URL.
+    assert mini.url.endswith("-20cl") and mini.volume_ml == 200
 
 
 def test_shopdutyfree_paginates_with_p():
