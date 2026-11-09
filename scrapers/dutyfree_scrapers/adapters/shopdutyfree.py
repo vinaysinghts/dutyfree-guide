@@ -21,12 +21,16 @@ from .base import Adapter
 # "92" segment is the store id; "view-all-liquor" covers every spirits and wine
 # subcategory, so one listing is enough.
 LIQUOR_CATEGORIES = [
-    "/en/92/wines-spirits/view-all-liquor",
+    # 100 per page (the largest the site offers) means fewer requests at the 30 s crawl delay.
+    "/en/92/wines-spirits/view-all-liquor?product_list_limit=100",
 ]
 
-CARD_SELECTORS = ["[data-product-id]", ".product-item", ".product-tile", ".product-card"]
+# Magento markup, checked against the live BLR listing (Scraper live check, 2026-11-09):
+#   li.product-item > .product-brand, .product-item-name a, .price-box [data-price-amount]
+# Note [data-product-id] sits on the price box, not the card, so it can't be a card selector.
+CARD_SELECTORS = ["li.product-item", ".product-item", ".product-tile", ".product-card"]
 NAME_SELECTORS = [".product-item-name", ".product-name", ".product-title", "h2", "h3"]
-PRICE_SELECTORS = ["[data-price-amount]", ".price .value", ".price", ".product-price"]
+PRICE_SELECTORS = ['[data-price-type="finalPrice"][data-price-amount]', "[data-price-amount]", ".price .value", ".price", ".product-price"]
 
 
 class ShopDutyFreeAdapter(Adapter):
@@ -61,9 +65,10 @@ class ShopDutyFreeAdapter(Adapter):
                 currency=detect_currency(price_text, self.currency) if not amount else self.currency,
                 url=absolute(self.base_url, first_attr(card, ["a[href]"], "href")),
                 volume_ml=parse_volume_ml(name) or parse_volume_ml(first_text(card, [".product-size", ".size"])),
-                image_url=first_attr(card, ["img"], "src"),
+                image_url=first_attr(card, ["img[data-src]"], "data-src") or first_attr(card, ["img"], "src"),
             ))
         return products
 
     def next_page_url(self, soup: BeautifulSoup, current_url: str, page: int) -> str | None:
-        return rel_next(soup, self.base_url) or with_page_param(current_url, "page", page)
+        # Magento pages with ?p=N.
+        return rel_next(soup, self.base_url) or with_page_param(current_url, "p", page)

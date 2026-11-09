@@ -44,6 +44,7 @@ def diagnose(html: str, base_url: str) -> dict:
         "card_counts": card_counts,
         # One real card's markup is what the CSS fallback has to be written against.
         "first_card_html": re.sub(r"\s+", " ", str(first_card))[:3000] if first_card else None,
+        "first_price_html": re.sub(r"\s+", " ", str(first_card.select_one(".price-box")))[:2500] if first_card and first_card.select_one(".price-box") else None,
         "pager_html": re.sub(r"\s+", " ", str(pager))[:1200] if pager else None,
         "rel_next": (soup.find("link", rel="next") or {}).get("href") if soup.find("link", rel="next") else None,
         "jsonld_types": sorted({m for m in re.findall(r'"@type"\s*:\s*"(\w+)"', html)})[:20],
