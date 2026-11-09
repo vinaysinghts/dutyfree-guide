@@ -6,6 +6,32 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ---
 
+## #8: Basel airport couldn't be found (2026-11-09)
+
+**Situation.** A user searched for Basel and got nothing.
+
+**Investigation.** Two separate causes:
+1. The APK has no Supabase keys, so it ran in **demo mode**, which only knew 10 hard-coded airports.
+2. Even against the database, search only matched IATA + name + city, as typed. Looking at the
+   OurAirports row for Basel shows why that's fragile: it's `BSL`, in France, named
+   "EuroAirport Basel–Mulhouse–Freiburg" (en dashes), city "Bâle / Mulhouse", with `MLH, EAP, Basle`
+   only in `keywords`. The same pattern hits common searches: "Bangalore" (BLR) and "Bombay" (BOM)
+   exist only in keywords, "Sao Paulo" missed "São Paulo", "basel mulhouse" missed the dashes.
+
+**Fix.**
+- Keep `icao` and `keywords` from OurAirports, and **fold** accents and punctuation on both the data
+  and the query (SQL `search_fold()` via `unaccent`, and the same `fold()` in TypeScript).
+- Require every query word to match, and rank exact codes first (§3.7 of the LLD).
+- Bundle the full list (3,245 airports) with the app and search it on the device in every mode.
+- Tests cover Basel by 12 different queries, plus Bangalore, Bombay, Zürich and São Paulo.
+
+**Lesson.** Real-world identifiers have aliases, and users type the one *they* know. Test search
+with the queries people actually type, taken from the real data, not just the canonical name.
+A generated column can't call a STABLE function like `unaccent()`; the standard fix is an
+IMMUTABLE wrapper that pins the dictionary.
+
+---
+
 ## #7: APK build failed before compiling anything (2026-11-09)
 
 **Situation.** The first runs of the new Android APK workflow failed early, for reasons that had
