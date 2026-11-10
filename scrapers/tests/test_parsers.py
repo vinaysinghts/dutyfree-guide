@@ -69,11 +69,21 @@ def test_shopdutyfree_live_magento_card():
     assert mini.url.endswith("-20cl") and mini.volume_ml == 200
 
 
-def test_shopdutyfree_paginates_with_p():
+def test_shopdutyfree_follows_magento_pager():
     adapter = ADAPTERS["shopdutyfree"]("https://bengaluru.shopdutyfree.com")
     from bs4 import BeautifulSoup
-    url = adapter.next_page_url(BeautifulSoup("<html></html>", "html.parser"), adapter.category_urls()[0], 2)
-    assert url.endswith("/en/92/wines-spirits/whisky?p=2")
+    html = '<ul class="pages-items"><li class="item pages-item-next">' \
+        '<a class="action next" href="/en/92/wines-spirits/whisky?p=2">Next</a></li></ul>'
+    url = adapter.next_page_url(BeautifulSoup(html, "html.parser"), adapter.category_urls()[0], 2)
+    assert url == "https://bengaluru.shopdutyfree.com/en/92/wines-spirits/whisky?p=2"
+
+
+def test_shopdutyfree_no_pager_means_one_page():
+    # BLR lists a whole subcategory on one page; ?p=2 just repeats it.
+    adapter = ADAPTERS["shopdutyfree"]("https://bengaluru.shopdutyfree.com")
+    from bs4 import BeautifulSoup
+    assert adapter.next_page_url(BeautifulSoup(read("shopdutyfree_magento.html"), "html.parser"),
+                                 adapter.category_urls()[0], 2) is None
 
 
 def test_crawl_dedupes_same_bottle_within_one_page():

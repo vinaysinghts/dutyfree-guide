@@ -53,14 +53,14 @@ class Adapter(ABC):
                     log.warning("robots.txt disallows %s; skipping", url)
                     break
                 products = self.parse_listing(html)
-                log.info("%s page %d: %d products", start_url, page, len(products))
                 # Two listings on one page can normalize to the same bottle (same
-                # match_key); keep the first, or the database upsert fails (problems log #10).
+                # match_key); keep the first, or the database upsert fails (problems log #11).
                 new = []
                 for product in products:
                     if product.key not in seen:
                         seen.add(product.key)
                         new.append(product)
+                log.info("%s page %d: %d products, %d new", start_url, page, len(products), len(new))
                 if not new:
                     # Empty page, or the site ignored the page parameter.
                     break
