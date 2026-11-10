@@ -74,3 +74,32 @@ def test_shopdutyfree_paginates_with_p():
     from bs4 import BeautifulSoup
     url = adapter.next_page_url(BeautifulSoup("<html></html>", "html.parser"), adapter.category_urls()[0], 2)
     assert url.endswith("/en/92/wines-spirits/whisky?p=2")
+
+
+def test_crawl_dedupes_same_bottle_within_one_page():
+    from dutyfree_scrapers.models import ScrapedProduct
+    from dutyfree_scrapers.adapters.base import Adapter
+
+    class OnePage(Adapter):
+        slug = "x"
+        currency = "INR"
+
+        def category_urls(self):
+            return ["https://x/a"]
+
+        def parse_listing(self, html):
+            mk = lambda n, p: ScrapedProduct(name=n, brand="Johnnie Walker", price=Decimal(p), currency="INR")
+            return [mk("Black Label 1L", "3450"), mk("Black Label 1L", "3500"), mk("Red Label 1L", "1500")]
+
+        def parse_listing_html(self, soup):
+            return []
+
+        def next_page_url(self, soup, current_url, page):
+            return None
+
+    class Client:
+        def get(self, url):
+            return "<html></html>"
+
+    got = list(OnePage("https://x").crawl(Client()))
+    assert [p.name for p in got] == ["Black Label 1L", "Red Label 1L"] and got[0].price == Decimal("3450")

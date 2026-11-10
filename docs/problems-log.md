@@ -6,6 +6,26 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ---
 
+## #10: The full BLR crawl fetched 230 bottles, then the save failed with a 500 (2026-11-10)
+
+**Situation.** After switching BLR to per-category crawling, a run fetched all 9 categories and
+then `POST /products?on_conflict=match_key` returned **500**. The log had no detail.
+
+**Cause.** The crawl de-duplicated against products *from earlier pages*, but not *within* a
+page. When two listings normalize to the same `match_key` (the same bottle listed twice, say
+plain and gift-boxed), both went into one upsert. Postgres refuses an `INSERT … ON CONFLICT DO
+UPDATE` that touches the same row twice (`21000 cardinality_violation`), and PostgREST maps that
+error class to HTTP 500.
+
+**Fix.** De-duplicate per page in the crawl loop and again in `save_prices` (defence in depth),
+and include PostgREST's error body in the exception so the next 500 is diagnosable from the log.
+
+**Lesson.** Upserts need unique keys *within the batch*, not just against the table. And an
+error without its body costs a full re-run (here, 10 minutes of polite crawling) to diagnose:
+always log what the server said.
+
+---
+
 ## #9: First contact with the live shop sites (2026-11-09)
 
 **Situation.** The adapters had been written blind (#4). A new `dutyfree-scrape probe` command,
@@ -32,6 +52,9 @@ logged what came back. Three rounds, about five minutes each, because BLR's robo
    "no rules, allow all". The convention (Python's `robotparser`, Google) is that 401/403 means
    **disallow all**, and it does now. The live check also runs only when adapter code changes, since
    every run is real traffic to the shop.
+5. **Pagination:** Magento ignores `?p=2` without JavaScript, so page 2 repeats page 1 and the
+   crawl stops (by design). Each subcategory page already lists all its bottles (whisky has 42),
+   so crawling subcategories rather than "view all" is what gets the full catalogue.
 
 **Lesson.** When you can't see the target, build the instrument first. A probe that logs status,
 bot-wall headers, real links and one sample of markup turned "0 products" into three specific,

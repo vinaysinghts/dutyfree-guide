@@ -54,12 +54,16 @@ class Adapter(ABC):
                     break
                 products = self.parse_listing(html)
                 log.info("%s page %d: %d products", start_url, page, len(products))
-                new = [p for p in products if p.key not in seen]
+                # Two listings on one page can normalize to the same bottle (same
+                # match_key); keep the first, or the database upsert fails (problems log #10).
+                new = []
+                for product in products:
+                    if product.key not in seen:
+                        seen.add(product.key)
+                        new.append(product)
                 if not new:
                     # Empty page, or the site ignored the page parameter.
                     break
-                for product in new:
-                    seen.add(product.key)
-                    yield product
+                yield from new
                 page += 1
                 url = self.next_page_url(BeautifulSoup(html, "html.parser"), url, page)
