@@ -88,6 +88,7 @@ writes a `prices` row with `source = 'crowd'`.
 | [0006](adr/0006-crowd-review-queue.md) | Crowd prices only after human review | Trust vs. slower to appear |
 | [0007](adr/0007-on-device-ocr.md) | Photo-first reports read by on-device OCR | Free and private vs. less accurate than a vision model |
 | [0008](adr/0008-location-verification.md) | Server-computed location check on reports | Cheap fraud signal vs. spoofable, so advisory only |
+| [0010](adr/0010-trip-is-a-set-of-airports.md) | A trip is a set of airports | Less input vs. no order-aware hints yet |
 
 ## 5. Scaling and failure thinking
 

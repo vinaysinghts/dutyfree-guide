@@ -41,6 +41,8 @@ export type RankedProduct = {
   best: Offer;
   /** INR saved by buying at `best` instead of the most expensive airport on the trip. */
   savingInr: number | null;
+  /** Trip airports with no price for this bottle (not sold there, or not collected yet). */
+  missing: string[];
 };
 
 export type AirportWithCoords = Airport & { latitude: number; longitude: number };

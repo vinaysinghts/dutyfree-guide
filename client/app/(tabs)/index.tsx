@@ -14,7 +14,7 @@ export default function TripScreen() {
   return (
     <ScrollView contentContainerStyle={styles.content}>
       <Text style={styles.title}>Where are you flying?</Text>
-      <Muted>Add every airport on your route, including layovers. We'll show where each bottle is cheapest.</Muted>
+      <Muted>Add each airport you'll pass through, including layovers. The order doesn't matter, and a return trip uses the same airports.</Muted>
       {isDemoMode ? (
         <Muted style={{ color: c.warn }}>Demo mode: sample prices only (no backend configured).</Muted>
       ) : null}
@@ -23,16 +23,13 @@ export default function TripScreen() {
 
       {trip.airports.length > 0 ? (
         <View style={styles.section}>
-          <Text style={styles.subtitle}>Your route</Text>
-          {trip.airports.map((a, i) => (
+          <Text style={styles.subtitle}>Your airports</Text>
+          {trip.airports.map((a) => (
             <Card key={a.iata} style={styles.stop}>
-              <Text style={styles.index}>{i + 1}</Text>
               <View style={{ flex: 1, backgroundColor: 'transparent' }}>
                 <Text style={{ fontWeight: '600' }}>{a.iata} · {a.city ?? a.name}</Text>
                 <Muted>{a.name}</Muted>
               </View>
-              <IconButton label="↑" hint={`Move ${a.iata} earlier`} onPress={() => trip.move(a.iata, -1)} disabled={i === 0} />
-              <IconButton label="↓" hint={`Move ${a.iata} later`} onPress={() => trip.move(a.iata, 1)} disabled={i === trip.airports.length - 1} />
               <IconButton label="✕" hint={`Remove ${a.iata}`} onPress={() => trip.remove(a.iata)} />
             </Card>
           ))}
@@ -59,5 +56,4 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 18, fontWeight: '600' },
   section: { gap: 8, backgroundColor: 'transparent' },
   stop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  index: { fontWeight: '700', width: 20 },
 });
