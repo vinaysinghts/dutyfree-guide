@@ -99,3 +99,15 @@ def match_key(name: str, brand: str | None = None, volume_ml: int | None = None)
     key = re.sub(r"\bold\b", "", key)
     key = re.sub(r"\s+", " ", key).strip()
     return f"{key}|{volume_ml if volume_ml else '?'}"
+
+
+_MULTIPACK_RE = re.compile(
+    r"\b\d+\s*x\s*\d+(?:[.,]\d+)?\s*(?:ml|cl|l|ltr)\b|\b(?:twin|multi|gift)[\s-]*pack\b|\bpack[\s-]+(?:of[\s-]+)?\d+\b",
+    re.IGNORECASE,
+)
+
+
+def is_multipack(*texts: str | None) -> bool:
+    """True for "Double Black Pack 2x1L" and similar: the price covers several bottles,
+    so comparing it with a single bottle elsewhere would be wrong."""
+    return any(t and _MULTIPACK_RE.search(t.replace("-", " ")) for t in texts)
