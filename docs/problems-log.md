@@ -6,6 +6,31 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ---
 
+## #10: The auto-screenshot vanished before the form could show it (2026-11-10)
+
+**Situation.** The "Report a problem" button takes a screenshot, parks it in a module variable,
+then navigates to the form, which takes it with `takeCapture()` (read once, then cleared, so an
+old picture can't leak into a later report). In the browser test the form always showed no
+screenshot, and nothing was logged, so the capture itself had worked.
+
+**Investigation.** No warning from `captureCurrentScreen()` meant it returned an image. So the
+hand-off was the suspect. The form read the capture inside a `useState` initializer. A log line
+in that initializer printed **four times** for one tap, even in the production web build: Expo
+Router mounts the modal screen more than once while it sets up the route, and each mount runs the
+initializer again. The first mount took the screenshot and cleared it; the mount that stayed on
+screen found nothing.
+
+**Fix.** Make the read idempotent: `recentCapture()` returns the stashed screenshot without
+clearing it, and it expires 30 seconds after the tap instead. The stale-picture risk is still
+covered, but by time rather than by "read once". A unit test pins the behaviour, and the browser
+check now shows the screenshot.
+
+**Lesson.** "Consume on read" is a hidden side effect, and React is allowed to run initializers and
+mount components more often than you expect (Strict Mode does it on purpose in development). Make
+reads pure and put the expiry somewhere explicit. It's the same reasoning as idempotent HTTP GETs.
+
+---
+
 ## #9: First contact with the live shop sites (2026-11-09)
 
 **Situation.** The adapters had been written blind (#4). A new `dutyfree-scrape probe` command,

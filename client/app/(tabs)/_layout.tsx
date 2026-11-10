@@ -2,6 +2,7 @@ import { SymbolView } from 'expo-symbols';
 import { Tabs } from 'expo-router';
 import type { ColorValue } from 'react-native';
 
+import { ReportIssueButton } from '@/components/ReportIssueButton';
 import { useClientOnlyValue } from '@/components/useClientOnlyValue';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
@@ -20,6 +21,8 @@ export default function TabLayout() {
       screenOptions={{
         tabBarActiveTintColor: Colors[colorScheme].tint,
         headerShown: useClientOnlyValue(false, true),
+        // Every tab gets the "Report a problem" button (ADR 0010).
+        headerRight: () => <ReportIssueButton />,
       }}>
       <Tabs.Screen
         name="index"
