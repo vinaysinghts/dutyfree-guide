@@ -51,3 +51,14 @@ def test_age_statements_normalise():
 
 def test_different_sizes_do_not_match():
     assert match_key("Absolut Vodka", None, 700) != match_key("Absolut Vodka", None, 1000)
+
+
+def test_is_multipack():
+    from dutyfree_scrapers.normalize import is_multipack
+
+    assert is_multipack("Double Black", "https://x/en/92/johnnie-walker-double-black-pack-2x1l")
+    assert is_multipack("Absolut Vodka 2 x 70cl")
+    assert is_multipack("Jameson Twin Pack 1L")
+    assert not is_multipack("Johnnie Walker Black Label 1L", "https://x/en/92/johnnie-walker-black-label-1l")
+    assert not is_multipack("Glenfiddich 12 Year Old 70cl")
+    assert not is_multipack("Takamaka 69 Overproof Rum 1l")

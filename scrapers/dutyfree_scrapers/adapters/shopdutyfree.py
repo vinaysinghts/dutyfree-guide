@@ -17,21 +17,33 @@ from ..normalize import detect_currency, parse_price, parse_volume_ml
 from ._html import absolute, first_attr, first_text, rel_next, with_page_param
 from .base import Adapter
 
+# Real paths from the live BLR home page (Scraper live check, 2026-11-09); "92"
+# is the store id. The first daily run showed "view-all-liquor" ignores ?p=2 (page 2
+# repeated page 1's 40 bottles), so crawl each subcategory, each up to 40 per page.
+# Products listed in two subcategories are de-duplicated by the crawl loop.
 LIQUOR_CATEGORIES = [
-    "/en/liquor/whisky",
-    "/en/liquor/spirits/vodka",
-    "/en/liquor/spirits/rum",
-    "/en/liquor/spirits/gin",
-    "/en/liquor/spirits/tequila-mezcal",
-    "/en/liquor/brandy-cognac",
-    "/en/liquor/liqueurs",
-    "/en/liquor/wine",
-    "/en/liquor/champagne-sparkling-wine",
+    "/en/92/wines-spirits/whisky",
+    "/en/92/wines-spirits/other-spirits/vodka",
+    "/en/92/wines-spirits/other-spirits/rum",
+    "/en/92/wines-spirits/other-spirits/gin",
+    "/en/92/wines-spirits/other-spirits/tequila-mezcal",
+    "/en/92/wines-spirits/other-spirits/spirit-drink",
+    "/en/92/wines-spirits/cognac-brandy",
+    "/en/92/wines-spirits/wine",
+    "/en/92/wines-spirits/champagne-sparkling-wine",
 ]
 
-CARD_SELECTORS = ["[data-product-id]", ".product-item", ".product-tile", ".product-card"]
+# Magento markup, checked against the live BLR listing (Scraper live check, 2026-11-09):
+#   li.product-item > .product-brand, .product-item-name a, .price-box [data-price-amount]
+# Note [data-product-id] sits on the price box, not the card, so it can't be a card selector.
+CARD_SELECTORS = ["li.product-item", ".product-item", ".product-tile", ".product-card"]
 NAME_SELECTORS = [".product-item-name", ".product-name", ".product-title", "h2", "h3"]
-PRICE_SELECTORS = ["[data-price-amount]", ".price .value", ".price", ".product-price"]
+PRICE_SELECTORS = ['[data-price-type="finalPrice"][data-price-amount]', "[data-price-amount]", ".price .value", ".price", ".product-price"]
+
+
+def _slug_words(url: str | None) -> str | None:
+    """'/en/92/johnnie-walker-black-label-1l' -> 'johnnie walker black label 1l'."""
+    return url.rstrip("/").rsplit("/", 1)[-1].replace("-", " ") if url else None
 
 
 class ShopDutyFreeAdapter(Adapter):
@@ -59,16 +71,22 @@ class ShopDutyFreeAdapter(Adapter):
             price = parse_price(price_text)
             if not name or price is None:
                 continue
+            link = first_attr(card, ["a.product-item-link[href]", "a.product-item-photo[href]", "a[href]:not([href='#'])"], "href")
             products.append(ScrapedProduct(
                 name=name,
                 brand=first_text(card, [".product-brand", ".brand"]),
                 price=price,
                 currency=detect_currency(price_text, self.currency) if not amount else self.currency,
-                url=absolute(self.base_url, first_attr(card, ["a[href]"], "href")),
-                volume_ml=parse_volume_ml(name) or parse_volume_ml(first_text(card, [".product-size", ".size"])),
-                image_url=first_attr(card, ["img"], "src"),
+                # The first <a> in a card is the wishlist button (href="#"), so name the product link.
+                url=absolute(self.base_url, link),
+                # Some names omit the size; the product URL usually ends in it ("…-whisky-1l").
+                volume_ml=(parse_volume_ml(name)
+                           or parse_volume_ml(first_text(card, [".product-size", ".size"]))
+                           or parse_volume_ml(_slug_words(link))),
+                image_url=first_attr(card, ["img[data-src]"], "data-src") or first_attr(card, ["img"], "src"),
             ))
         return products
 
     def next_page_url(self, soup: BeautifulSoup, current_url: str, page: int) -> str | None:
-        return rel_next(soup, self.base_url) or with_page_param(current_url, "page", page)
+        # Magento pages with ?p=N.
+        return rel_next(soup, self.base_url) or with_page_param(current_url, "p", page)

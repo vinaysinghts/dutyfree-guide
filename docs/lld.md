@@ -35,7 +35,7 @@ admins (user_id)
 
 | Table | Why it exists / notable choices |
 |---|---|
-| `airports` | From OurAirports. `search_text` is a **generated column** + trigram index, so search is one indexed `ILIKE`. |
+| `airports` | From OurAirports, with `icao` and `keywords` (alternate names and codes). `search_text` is a **generated column** (`search_fold`: accents and punctuation removed) + trigram index. The app searches its bundled copy of the same list (§3.7). |
 | `retailers` | A shop at an airport. `adapter` says which scraper collects it; null = crowd-only. Many airports share an adapter (Avolta's platform). |
 | `products` | Canonical bottle. `match_key` = normalized brand+name+volume; UNIQUE so upserts dedupe. |
 | `prices` | **Append-only** history (never updated). Gives price charts later for free and makes scrape runs idempotent-ish. |
@@ -120,6 +120,22 @@ Refuses to approve until product, price and currency are filled in (OCR may have
 links to the given product or creates one, upserts the airport's "Reported by travellers"
 retailer and inserts a `prices` row with `source='crowd'`.
 
+### 3.7 Airport search: `client/lib/airportSearch.ts → searchAirportList(airports, query)`
+Airports go by several names and codes: Basel's EuroAirport is BSL, MLH and EAP and "Bâle" in French;
+Bengaluru is "Bangalore" to most travellers. So:
+1. **Fold** both sides: NFKD, strip accents, lowercase, punctuation → spaces (`Basel–Mulhouse` → `basel mulhouse`).
+   SQL `search_fold()` does the same, so the database and the app agree.
+2. Search text = IATA + ICAO + name + city + OurAirports `keywords`.
+3. **Every** query word must appear (`basel airport` works; word order doesn't matter).
+4. Score: exact IATA 1000, other code (ICAO, MLH) 600, word starts the city 60, starts any word 40,
+   substring 10; large airports +5 on ties.
+
+**Where it runs:** on the device, over the bundled list (`assets/airports.json`, 3,245 airports,
+320 KB, 130 KB gzipped). Airports are static reference data, so a local search is instant, works
+offline at the gate, and has no per-keystroke API cost. Regenerate with
+`dutyfree-scrape airports --export ../client/assets/airports.json`. Trade-off: a new airport needs
+an app update; acceptable, since airports open a few times a year.
+
 ## 4. Client modules
 
 | Module | Responsibility |
@@ -130,6 +146,7 @@ retailer and inserts a `prices` row with `source='crowd'`.
 | `lib/compare.ts` | Pure ranking logic (above). |
 | `components/AgeGate.tsx` | 18+ confirmation, required by app stores for alcohol content. |
 | `components/AirportSearch.tsx` | 200 ms debounced search; cancels stale responses. |
+| `lib/airportSearch.ts` / `lib/airports.ts` | Folding, matching and ranking (§3.7) / the bundled airport list. |
 | `lib/shelfTag.ts` | OCR text to report draft (§3.4). Pure, tested on real OCR output. |
 | `lib/ocr.ts` / `lib/ocr.web.ts` | `readText(uri)` via ML Kit (native) or self-hosted Tesseract (web). |
 | `lib/geo.ts` | Haversine distance, nearest airport, EXIF GPS and timestamp parsing. |

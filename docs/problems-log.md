@@ -6,6 +6,103 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ---
 
+## #9: First contact with the live shop sites (2026-11-09)
+
+**Situation.** The adapters had been written blind (#4). A new `dutyfree-scrape probe` command,
+run by the **Scraper live check** workflow from GitHub's runners, fetched every category page and
+logged what came back. Three rounds, about five minutes each, because BLR's robots.txt asks for
+30 s between requests.
+
+**What we learned.**
+1. **BLR (Avolta, Magento):** every guessed category URL was a 404. The probe also logs the
+   home page's liquor links, which showed the real listing: `/en/92/wines-spirits/view-all-liquor`
+   (92 is the store id).
+2. That page had 40 product cards, but we parsed 0. Logging one card's HTML showed why:
+   `[data-product-id]`, our first card selector, sits on the *price box*, not the card, so no
+   "card" had a name. Fix: select `li.product-item`, read the `finalPrice` amount (the sale price,
+   not the crossed-out one), and take the product link rather than the first `<a>` (a wishlist
+   button with `href="#"`). Sizes missing from a name come from the URL slug (`…-20cl`).
+3. **AMS (Schiphol):** every request got `403` with `cf-mitigated: challenge`, Cloudflare's
+   JavaScript bot check. Getting past it would mean pretending to be a browser to defeat a
+   deliberate block, which ADR-0004 rules out. AMS needs another source (crowd reports, the
+   operator's own shop, or a data partnership).
+4. **Then BLR started refusing us too.** About 25 minutes and four probe runs later (roughly 25
+   requests, 30 s apart), Akamai (`server: AkamaiGHost`) answered `403 Access Denied` to every
+   request, robots.txt included. That exposed a bug: `PoliteClient` treated a 403 on robots.txt as
+   "no rules, allow all". The convention (Python's `robotparser`, Google) is that 401/403 means
+   **disallow all**, and it does now. The live check also runs only when adapter code changes, since
+   every run is real traffic to the shop.
+
+**Lesson.** When you can't see the target, build the instrument first. A probe that logs status,
+bot-wall headers, real links and one sample of markup turned "0 products" into three specific,
+fixable causes. Also read headers before guessing: `cf-mitigated` says "blocked on purpose",
+which is a policy question, not a bug.
+
+---
+
+## #8: Basel airport couldn't be found (2026-11-09)
+
+**Situation.** A user searched for Basel and got nothing.
+
+**Investigation.** Two separate causes:
+1. The APK has no Supabase keys, so it ran in **demo mode**, which only knew 10 hard-coded airports.
+2. Even against the database, search only matched IATA + name + city, as typed. Looking at the
+   OurAirports row for Basel shows why that's fragile: it's `BSL`, in France, named
+   "EuroAirport Basel–Mulhouse–Freiburg" (en dashes), city "Bâle / Mulhouse", with `MLH, EAP, Basle`
+   only in `keywords`. The same pattern hits common searches: "Bangalore" (BLR) and "Bombay" (BOM)
+   exist only in keywords, "Sao Paulo" missed "São Paulo", "basel mulhouse" missed the dashes.
+
+**Fix.**
+- Keep `icao` and `keywords` from OurAirports, and **fold** accents and punctuation on both the data
+  and the query (SQL `search_fold()` via `unaccent`, and the same `fold()` in TypeScript).
+- Require every query word to match, and rank exact codes first (§3.7 of the LLD).
+- Bundle the full list (3,245 airports) with the app and search it on the device in every mode.
+- Tests cover Basel by 12 different queries, plus Bangalore, Bombay, Zürich and São Paulo.
+
+**Lesson.** Real-world identifiers have aliases, and users type the one *they* know. Test search
+with the queries people actually type, taken from the real data, not just the canonical name.
+A generated column can't call a STABLE function like `unaccent()`; the standard fix is an
+IMMUTABLE wrapper that pins the dictionary.
+
+---
+
+## #7: APK build failed before compiling anything (2026-11-09)
+
+**Situation.** The first runs of the new Android APK workflow failed early, for reasons that had
+nothing to do with our code.
+
+1. **`setup-java` with `cache: gradle` errored.** It looks for `**/*.gradle*` to build a cache key,
+   but with Continuous Native Generation `android/` doesn't exist until `expo prebuild` runs, later
+   in the job. **Fix:** drop the cache option there and add `gradle/actions/setup-gradle` *after* prebuild.
+2. **The Gradle wrapper got HTTP 504** downloading `gradle-9.4.1-bin.zip`. It failed again on a re-run
+   a minute later. Tracing the URL: `services.gradle.org` redirects to a GitHub release asset, and that
+   hop was timing out intermittently (the same URL returned 206 when probed later from elsewhere).
+   **Fix:** a dedicated "Download Gradle" step that retries `./gradlew --version` up to 5 times with
+   growing back-off, before the real build. `setup-gradle` then caches the distribution, so later runs
+   don't depend on that download at all.
+3. **Then the build itself got a 504** fetching `kotlin-compiler-embeddable-2.2.0.jar`: Maven Central
+   redirected to a JetBrains GitHub release asset, the same flaky host. **Fix:** raise Gradle's
+   per-download retries (`org.gradle.internal.repository.max.retries=8`, 2 s initial back-off) and
+   re-run the build up to 3 times. Completed downloads stay in Gradle's cache, so each retry only
+   fetches what's still missing.
+4. **Retries weren't enough.** After merge, the build hit the same 504 on
+   `kotlin-compiler-embeddable-2.2.10.jar` (a different Kotlin version pulled in by
+   `react-native-screens` and `react-native-safe-area-context`) on every retry. Retrying a host that's
+   down for minutes doesn't help; going around it does. From a different network, Maven Central served the 56 MB jar
+   directly, but from GitHub's runners it redirected large JetBrains jars to GitHub release assets.
+   **Fix:** a Gradle init script (`.github/gradle/maven-mirror.gradle`, installed into
+   `~/.gradle/init.d/`) puts Google's Maven Central mirror
+   (`maven-central.storage-download.googleapis.com`, served from Google Cloud Storage, no redirect)
+   *first* in every project's repository list. Gradle tries repositories in order, so Maven Central
+   is only a fallback. Verified locally: the jar resolves from the mirror URL.
+
+**Lesson.** Order matters in CI: a step can't key a cache on files a later step generates. And any
+build that downloads tools at runtime needs retries *and* a cache, because the download is a network
+dependency like any other. When one upstream keeps failing, retries only add delay: add a second
+source (a mirror) so the build doesn't depend on that host at all.
+
+---
+
 ## #6: OCR engine couldn't be downloaded from public CDNs (2026-11-09)
 
 **Situation.** Tesseract.js by default downloads its WebAssembly core from `cdn.jsdelivr.net` and the

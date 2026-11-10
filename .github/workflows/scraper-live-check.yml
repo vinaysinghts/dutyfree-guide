@@ -1,0 +1,39 @@
+name: Scraper live check
+
+# Runs each adapter against the real shop site from GitHub's runners (the
+# development sandbox can't reach these sites, problems log #4). Stores
+# nothing: it prints what was found and uploads the fetched pages so selectors
+# can be fixed against real markup. Safe to run any time.
+on:
+  pull_request:
+    # Only when adapter code changes: every run is real traffic to the shops.
+    paths: ["scrapers/dutyfree_scrapers/adapters/**", "scrapers/dutyfree_scrapers/probe.py"]
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { airport: BLR, adapter: shopdutyfree, base_url: "https://bengaluru.shopdutyfree.com" }
+          - { airport: AMS, adapter: schiphol, base_url: "https://www.schiphol.nl" }
+    defaults: { run: { working-directory: scrapers } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e .
+      - name: Probe ${{ matrix.airport }}
+        # Informational until the adapters are verified: a miss shouldn't block PRs.
+        continue-on-error: true
+        run: dutyfree-scrape probe --adapter ${{ matrix.adapter }} --base-url ${{ matrix.base_url }} --save-dir probe-pages
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe-pages-${{ matrix.airport }}
+          path: scrapers/probe-pages
+          if-no-files-found: ignore
+          retention-days: 7

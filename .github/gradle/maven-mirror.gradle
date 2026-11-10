@@ -1,0 +1,18 @@
+// Put Google's mirror of Maven Central ahead of every project's repositories.
+// Maven Central answers some large JetBrains jars with a redirect to GitHub
+// release assets, which has returned 504s in CI (problems log #7). The mirror
+// serves the same files from Google Cloud Storage directly.
+def mirrorUrl = 'https://maven-central.storage-download.googleapis.com/maven2/'
+def addMirrorFirst = { RepositoryHandler repos ->
+  if (repos.findByName('MavenCentralGoogleMirror') != null) return
+  def mirror = repos.maven {
+    name = 'MavenCentralGoogleMirror'
+    url = mirrorUrl
+  }
+  repos.remove(mirror)
+  repos.addFirst(mirror)
+}
+allprojects {
+  addMirrorFirst(buildscript.repositories)
+  addMirrorFirst(repositories)
+}

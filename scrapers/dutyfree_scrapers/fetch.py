@@ -19,6 +19,7 @@ class PoliteClient:
     def __init__(self, delay_seconds: float = 5.0, timeout: float = 30.0) -> None:
         self.delay = delay_seconds
         self._last_request = 0.0
+        self.last_url: str | None = None
         self._robots: dict[str, urllib.robotparser.RobotFileParser] = {}
         self._client = httpx.Client(
             headers={"User-Agent": USER_AGENT, "Accept-Language": "en"},
@@ -32,7 +33,12 @@ class PoliteClient:
             parser = urllib.robotparser.RobotFileParser()
             try:
                 resp = self._client.get(urljoin(origin, "/robots.txt"))
-                parser.parse(resp.text.splitlines() if resp.status_code == 200 else [])
+                if resp.status_code in (401, 403):
+                    # The site refuses us outright: treat as "disallow everything", the
+                    # same rule Python's urllib.robotparser and Google's crawler use.
+                    parser.disallow_all = True
+                else:
+                    parser.parse(resp.text.splitlines() if resp.status_code == 200 else [])
             except httpx.HTTPError:
                 parser.parse([])
             crawl_delay = parser.crawl_delay(USER_AGENT)
@@ -49,6 +55,7 @@ class PoliteClient:
             time.sleep(wait)
         self._last_request = time.monotonic()
         resp = self._client.get(url)
+        self.last_url = str(resp.url)  # after redirects
         resp.raise_for_status()
         return resp.text
 
