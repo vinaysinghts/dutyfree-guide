@@ -26,10 +26,11 @@ jobs:
       contents: write # to publish the release on main
     defaults: { run: { working-directory: client } }
     env:
-      # Optional: set these repo secrets to point the APK at your Supabase
-      # project. Without them the app runs in demo mode with sample prices.
-      EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
-      EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+      # The hosted Supabase project. Both values are public by design: the URL
+      # and publishable key ship inside every app, and row level security is
+      # what protects the data. Repo secrets of the same name override them.
+      EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL || 'https://pkywwbvqpwomvbldgbyw.supabase.co' }}
+      EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_4OVAEiIq5Fy8Nqk5M_FRlg_jwQFXwkJ' }}
     steps:
       - uses: actions/checkout@v4
 
