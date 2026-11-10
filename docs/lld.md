@@ -74,6 +74,8 @@ Known limits: see [ADR-0005](adr/0005-product-matching.md).
 - Per product, keep **one offer per airport** (the cheapest of shop vs traveller report).
 - Sort offers by `price_inr` ascending; tie → scraped beats crowd → fresher wins; unknown INR sorts last.
 - `savingInr` = dearest priced offer − cheapest (null if < 2 priced airports).
+- `missing` = trip airports with no price for the bottle, so the card can list every airport (ADR-0010).
+- `minAirports` (UI: "Only bottles at 2+ airports") hides bottles that can't be compared.
 - Sort products by their best offer.
 - Complexity O(n log n) in rows; pure function, unit tested (`npm test`).
 
