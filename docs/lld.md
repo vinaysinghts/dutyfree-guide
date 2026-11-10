@@ -31,6 +31,7 @@ airports (iata PK) ──< retailers (airport_iata) ──< prices >── produ
                     price_submissions ──(approved)──────┘   fx_rates (currency PK)
 trips ──< trip_airports (trip_id, position) >── airports
 admins (user_id)
+issue_reports (reporter → auth.users)   storage: issue-screenshots/<uid>/<report folder>/<n>.jpg
 ```
 
 | Table | Why it exists / notable choices |
@@ -43,6 +44,7 @@ admins (user_id)
 | `fx_rates` | INR per 1 unit. One row per currency, overwritten daily. |
 | `price_submissions` | Review queue. Typed fields are optional when `photo_path` is set (CHECK `photo_or_details`). Stores `ocr_text`, `ocr_draft`, capture coordinates, `photo_taken_at`, and the trigger-computed `distance_km` / `location_check`. Partial index on `status='pending'` keeps the queue query fast. |
 | `admins` | Membership table read by `is_admin()`. |
+| `issue_reports` | In-app problem reports, used as an **outbox** for GitHub issues (§3.8). Client writes `category`, `description`, `screenshot_paths`, `context` (jsonb, ≤ 16 KB). The function owns `status` (`pending → filing → filed`/`failed`), `attempts`, `claimed_at`, `last_error`, `github_issue_number/url`. Partial index on unfiled rows for the sweep. |
 
 ### Row level security (RLS)
 
@@ -54,6 +56,8 @@ The app talks to the database directly with a **public** anon key, so RLS is the
 | `price_submissions` | insert own rows (status forced to `pending`), read own; admins read all |
 | `trips`, `trip_airports` | full access to own rows only |
 | storage `submission-photos` | upload into `<uid>/…`, read own; admins read all |
+| `issue_reports` | insert own (trigger forces server fields, 5/hour), read own; admins read all; no update/delete (service role only) |
+| storage `issue-screenshots` | upload into `<uid>/…`, read own; admins read all |
 
 Writes to the catalogue only happen with the scraper's **service-role** key (bypasses RLS) or via
 `review_submission()` (`SECURITY DEFINER`, checks `is_admin()` first).
@@ -74,6 +78,8 @@ Known limits: see [ADR-0005](adr/0005-product-matching.md).
 - Per product, keep **one offer per airport** (the cheapest of shop vs traveller report).
 - Sort offers by `price_inr` ascending; tie → scraped beats crowd → fresher wins; unknown INR sorts last.
 - `savingInr` = dearest priced offer − cheapest (null if < 2 priced airports).
+- `missing` = trip airports with no price for the bottle, so the card can list every airport (ADR-0010).
+- `minAirports` (UI: "Only bottles at 2+ airports") hides bottles that can't be compared.
 - Sort products by their best offer.
 - Complexity O(n log n) in rows; pure function, unit tested (`npm test`).
 
@@ -136,6 +142,36 @@ offline at the gate, and has no per-keystroke API cost. Regenerate with
 `dutyfree-scrape airports --export ../client/assets/airports.json`. Trade-off: a new airport needs
 an app update; acceptable, since airports open a few times a year.
 
+### 3.8 Problem reports → GitHub issues (ADR-0010)
+
+**Client** (`components/ReportIssueButton.tsx` → `app/report-issue.tsx` → `lib/api.ts submitIssueReport`)
+1. Button: `captureCurrentScreen()` *before* navigating; `stashCapture({uri, screen: pathname})`.
+   The form reads it with `recentCapture()` (not consumed on read, expires after 30 s; see problem #10).
+2. `collectContext(screen, tripIatas)` (`lib/deviceContext.ts`) → `shareableContext()` applies the
+   user's opt-outs. The form renders the exact JSON that will be sent.
+3. `submitIssueReport`: upload screenshots → `insert … returning id` → `functions.invoke('file-issue',
+   {report_id})`. Returns `filed` (with the issue URL) or `pending` (saved, sweep will file it).
+   Order matters: the row is written before the side effect, so a failure after step 2 loses nothing.
+
+**Database** (`20261110010000_issue_reports.sql`)
+- `issue_reports_before_insert` trigger: resets server-owned fields, rejects screenshots outside
+  `<reporter>/`, raises `P0429` after 5 reports in an hour.
+- `claim_issue_report(id)`: the lease. One `UPDATE … SET status='filing', attempts+1 WHERE id=$1 AND
+  attempts<5 AND (status IN ('pending','failed') OR (status='filing' AND claimed_at < now()-5 min))
+  RETURNING *`. Row-level locking makes it atomic: of two concurrent callers, exactly one gets a row.
+  Executable by `service_role` only.
+
+**Edge Function** (`supabase/functions/file-issue/`, Deno)
+- `index.ts`: `POST {report_id}` with the user's token → `auth.getUser(token)` → owner check →
+  `fileReport`. `POST {sweep:true}` with `SYNC_TOKEN` → up to 20 unfiled reports older than 2 min.
+  `fileReport`: already filed? return it → no token? `pending` → claim → sign screenshot URLs (1 year)
+  → `buildIssue` → GitHub `POST /repos/{repo}/issues` (retry without labels on 422) → `filed` or
+  `failed` + `last_error`.
+- `issue.ts` (pure, unit-tested under both Node and Deno): title `[App] Bug (/prices): first line…`;
+  body = description, screenshots as `<img width=320>`, context table, recent logs in a
+  `<details>` block with a fence longer than any backtick run inside, and the
+  `<!-- app-report:<id> -->` marker. `neutralize()` breaks `@mentions` with a zero-width space.
+
 ## 4. Client modules
 
 | Module | Responsibility |
@@ -150,8 +186,20 @@ an app update; acceptable, since airports open a few times a year.
 | `lib/shelfTag.ts` | OCR text to report draft (§3.4). Pure, tested on real OCR output. |
 | `lib/ocr.ts` / `lib/ocr.web.ts` | `readText(uri)` via ML Kit (native) or self-hosted Tesseract (web). |
 | `lib/geo.ts` | Haversine distance, nearest airport, EXIF GPS and timestamp parsing. |
+| `lib/issueReport.ts` | Problem-report types, validation, opt-outs, demo-mode GitHub URL, screenshot hand-off (§3.8). Pure. |
+| `lib/diagnostics.ts` | In-memory ring buffer of the last 25 console errors/warnings, with token redaction. |
+| `lib/deviceContext.ts` / `lib/screenshot.ts` | App/device details for a report / screenshot of the current screen. |
 
 ## 5. Interfaces
+
+**`file-issue` Edge Function** (`/functions/v1/file-issue`)
+```
+POST {"report_id": 12}   Authorization: Bearer <user access token>
+  200 {"status":"filed","issue_url":"…","issue_number":34}
+  200 {"status":"pending"|"failed"|"skipped","reason":"…"}     401 not signed in   404 not your report
+POST {"sweep": true}     Authorization: Bearer <SYNC_TOKEN>
+  200 {"checked": n, "results": {"12": {…}}}                     403 wrong token
+```
 
 **Scraper CLI**
 ```

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Linking, Pressable, RefreshControl, StyleSheet } from 'react-native';
 
 import { Text, View } from '@/components/Themed';
-import { Card, Input, Muted, useColors } from '@/components/ui';
+import { Card, Chip, Input, Muted, useColors } from '@/components/ui';
 import { pricesAt } from '@/lib/api';
 import { rankProducts } from '@/lib/compare';
 import { formatInr, formatMoney, formatVolume } from '@/lib/format';
@@ -19,6 +19,8 @@ export default function PricesScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  // "Compare only": hide bottles priced at just one airport, which can't be compared.
+  const [compareOnly, setCompareOnly] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -30,7 +32,24 @@ export default function PricesScreen() {
 
   useEffect(load, [load]);
 
-  const ranked = useMemo(() => rankProducts(rows, { query }), [rows, query]);
+  const ranked = useMemo(
+    () => {
+      const trip = key ? key.split(',') : [];
+      return rankProducts(rows, { query, airports: trip, minAirports: compareOnly && trip.length > 1 ? 2 : 1 });
+    },
+    [rows, query, key, compareOnly],
+  );
+  // Newest price per airport: tells the traveller (and us) whether scraping is current.
+  const updatedAt = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of rows) if (!m.has(r.airport_iata) || r.observed_at > m.get(r.airport_iata)!) m.set(r.airport_iata, r.observed_at);
+    return m;
+  }, [rows]);
+  const noData = iatas.filter((i) => !updatedAt.has(i));
+  const freshness = iatas
+    .filter((i) => updatedAt.has(i))
+    .map((i) => `${i} ${new Date(updatedAt.get(i)!).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`)
+    .join(' · ');
 
   if (iatas.length === 0) {
     return (
@@ -50,9 +69,20 @@ export default function PricesScreen() {
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
       ListHeaderComponent={
         <View style={{ gap: 8, backgroundColor: 'transparent' }}>
-          <Text style={styles.title}>Cheapest on {iatas.join(' → ')}</Text>
-          <Muted>All prices converted to INR at today's rates. Cheapest bottles first.</Muted>
+          <Text style={styles.title}>Prices at {iatas.join(', ')}</Text>
+          <Muted>Every airport's price for each bottle, in INR at today's rates. Cheapest bottles first.</Muted>
+          {freshness ? <Muted>Prices updated: {freshness}</Muted> : null}
+          {noData.length && !loading ? (
+            <Muted style={{ color: c.warn }}>
+              No prices collected yet for {noData.join(', ')}. You can add one with Report a price.
+            </Muted>
+          ) : null}
           <Input value={query} onChangeText={setQuery} placeholder="Filter, e.g. Johnnie Walker or gin" />
+          {iatas.length > 1 ? (
+            <View style={{ flexDirection: 'row', backgroundColor: 'transparent' }}>
+              <Chip label="Only bottles at 2+ airports" selected={compareOnly} onPress={() => setCompareOnly((v) => !v)} />
+            </View>
+          ) : null}
           {error ? <Muted style={{ color: c.danger }}>{error}</Muted> : null}
           {loading && rows.length === 0 ? <ActivityIndicator /> : null}
         </View>
@@ -94,8 +124,14 @@ function ProductCard({ product }: { product: RankedProduct }) {
               {o.source === 'crowd' ? ` · reported by a traveller on ${o.observed_at.slice(0, 10)}` : ''}
             </Muted>
           </View>
-          {i === 0 ? <Text style={{ color: c.tint, fontWeight: '700' }}>Cheapest</Text> : null}
+          {i === 0 && product.offers.length > 1 ? <Text style={{ color: c.tint, fontWeight: '700' }}>Cheapest</Text> : null}
         </Pressable>
+      ))}
+      {product.missing.map((iata) => (
+        <View key={iata} style={[styles.offer, { borderColor: c.border, backgroundColor: 'transparent', borderStyle: 'dashed' }]}>
+          <Text style={[styles.airport, { opacity: 0.6 }]}>{iata}</Text>
+          <Muted style={{ flex: 1 }}>No price yet</Muted>
+        </View>
       ))}
     </Card>
   );

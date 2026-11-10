@@ -67,3 +67,23 @@ test('search filters by brand or name', () => {
   );
   assert.deepEqual(ranked.map((p) => p.productId), [2]);
 });
+
+test('every trip airport appears: ones without a price are listed as missing, in trip order', () => {
+  const rows = [
+    row({ product_id: 1, airport_iata: 'BLR', price_inr: 3450 }),
+    row({ product_id: 2, airport_iata: 'AMS', price_inr: 3150 }),
+    row({ product_id: 2, airport_iata: 'BLR', price_inr: 3450 }),
+  ];
+  const [p2, p1] = rankProducts(rows, { airports: ['AMS', 'DXB', 'BLR'] });
+  assert.deepEqual(p1.missing, ['AMS', 'DXB']);
+  assert.deepEqual(p2.missing, ['DXB']);
+});
+
+test('minAirports keeps only bottles priced at several airports', () => {
+  const rows = [
+    row({ product_id: 1, airport_iata: 'BLR', price_inr: 3450 }),
+    row({ product_id: 2, airport_iata: 'AMS', price_inr: 3150 }),
+    row({ product_id: 2, airport_iata: 'BLR', price_inr: 3450 }),
+  ];
+  assert.deepEqual(rankProducts(rows, { minAirports: 2 }).map((p) => p.productId), [2]);
+});

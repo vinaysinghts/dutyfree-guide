@@ -20,6 +20,8 @@ before flying, **where on their route each bottle is cheapest**, in their home c
 3. Report a price by snapping the shelf tag; details are read from the photo, the location is
    checked against the airport, and it shows to others only after review.
 4. Admins review reports (approve / reject, optionally linking to an existing product).
+5. Report a problem from any screen: a screenshot, a note and device/app details become a GitHub
+   issue on this repo, ready to pick up and fix.
 
 **Non-functional**
 | Concern | Target | Why it matters here |
@@ -76,6 +78,22 @@ trigger computes the distance to the airport and the `location_check` verdict. A
 (photo, OCR text, location verdict), corrects fields, and approves via `review_submission()`, which
 writes a `prices` row with `source = 'crowd'`.
 
+**Problem reports (app → GitHub issue).** Tap the bug icon → the app screenshots the current
+screen → the user adds a note → screenshots go to a private bucket and an `issue_reports` row is
+inserted (the outbox) → the app calls the `file-issue` Edge Function, which holds the GitHub token,
+leases the row, and opens the issue with signed screenshot links. An hourly GitHub Action sweeps
+anything that didn't get filed. Full reasoning: [ADR-0010](adr/0010-in-app-issue-reporting.md).
+
+```
+App ──(1) upload screenshots──▶ Storage: issue-screenshots (private)
+ │  ──(2) insert row──────────▶ Postgres: issue_reports  (status = pending)
+ │  ──(3) invoke──────────────▶ Edge Function file-issue ──claim row──▶ Postgres
+ │                                  │  └─ signed URLs ──▶ Storage
+ │                                  └─ POST /issues (token) ──▶ GitHub
+ │                                  └─ status = filed, issue number ──▶ Postgres
+ GitHub Actions (hourly) ──sweep──▶ file-issue  (files whatever (3) missed)
+```
+
 ## 4. Key decisions (summaries; full reasoning in ADRs)
 
 | # | Decision | Main trade-off |
@@ -88,6 +106,7 @@ writes a `prices` row with `source = 'crowd'`.
 | [0006](adr/0006-crowd-review-queue.md) | Crowd prices only after human review | Trust vs. slower to appear |
 | [0007](adr/0007-on-device-ocr.md) | Photo-first reports read by on-device OCR | Free and private vs. less accurate than a vision model |
 | [0008](adr/0008-location-verification.md) | Server-computed location check on reports | Cheap fraud signal vs. spoofable, so advisory only |
+| [0010](adr/0010-in-app-issue-reporting.md) | Problem reports become GitHub issues via an Edge Function, outbox + hourly sweep | Token never in the app, nothing lost vs. at-least-once (rare duplicate issue) and public screenshots |
 
 ## 5. Scaling and failure thinking
 
@@ -100,6 +119,9 @@ writes a `prices` row with `source = 'crowd'`.
   and sorts last instead of being wrongly ranked.
 - **Abuse of crowd reports** → RLS limits inserts to the user's own rows; nothing is public until
   approved; length/range CHECK constraints reject garbage at the database.
+
+- **GitHub down or rate-limited** when a user reports a problem → the report is already saved;
+  the user is told it will be posted within the hour, and the sweep job files it.
 
 ## 6. What a staff engineer would watch next
 

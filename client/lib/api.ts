@@ -7,6 +7,7 @@ import { allAirports } from './airports';
 import { DEMO_PRICES } from './demo';
 import { ensureSession, supabase } from './supabase';
 import { nearestAirport, type GeoPoint } from './geo';
+import type { IssueReportInput, IssueReportResult } from './issueReport';
 import type { Airport, AirportWithCoords, PriceRow, Submission, SubmissionEdits, SubmissionInput } from './types';
 
 /**
@@ -119,4 +120,56 @@ export async function isAdmin(): Promise<boolean> {
   if (!supabase) return false;
   const { data } = await supabase.rpc('is_admin');
   return data === true;
+}
+
+/**
+ * Problem report → GitHub issue (ADR 0010). Three steps, in an order that never
+ * loses a report: upload screenshots, insert the row (the durable record),
+ * then ask the file-issue function to open the GitHub issue. If that last step
+ * fails, the report is still saved and the hourly sync files it.
+ */
+export async function submitIssueReport(input: IssueReportInput): Promise<IssueReportResult> {
+  if (!supabase) throw new Error('Reports need the backend.');
+  const userId = await ensureSession();
+  const folder = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  const screenshot_paths: string[] = [];
+  for (const [i, uri] of input.screenshotUris.entries()) {
+    const blob = await (await fetch(uri)).blob();
+    const ext = blob.type === 'image/png' ? 'png' : 'jpg';
+    const path = `${folder}/${i + 1}.${ext}`;
+    const { error } = await supabase.storage
+      .from('issue-screenshots')
+      .upload(path, blob, { contentType: blob.type || 'image/jpeg' });
+    if (error) throw error;
+    screenshot_paths.push(path);
+  }
+
+  const { data, error } = await supabase
+    .from('issue_reports')
+    .insert({
+      category: input.category,
+      description: input.description.trim(),
+      screenshot_paths,
+      context: input.context,
+    })
+    .select('id')
+    .single();
+  if (error) {
+    if (error.code === 'P0429') throw new Error('You have sent a lot of reports in the last hour. Please try again later.');
+    throw error;
+  }
+  const reportId = (data as { id: number }).id;
+
+  try {
+    const { data: filed, error: fnError } = await supabase.functions.invoke('file-issue', {
+      body: { report_id: reportId },
+    });
+    if (!fnError && filed?.status === 'filed') {
+      return { status: 'filed', issueUrl: filed.issue_url, issueNumber: filed.issue_number };
+    }
+  } catch {
+    // fall through: saved, filed later
+  }
+  return { status: 'pending', reportId };
 }
