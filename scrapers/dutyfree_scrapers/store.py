@@ -13,6 +13,7 @@ from decimal import Decimal
 import httpx
 
 from .models import ScrapedProduct
+from .normalize import is_multipack
 
 
 class SupabaseStore:
@@ -40,6 +41,8 @@ class SupabaseStore:
         return resp.json()
 
     def save_prices(self, retailer_id: int, products: list[ScrapedProduct]) -> int:
+        # Multipacks can't be compared bottle-for-bottle, so they aren't stored.
+        products = [p for p in products if not is_multipack(p.name, p.url)]
         if not products:
             return 0
         rows = [{

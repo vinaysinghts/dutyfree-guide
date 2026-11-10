@@ -6,7 +6,8 @@ name: Scraper live check
 # can be fixed against real markup. Safe to run any time.
 on:
   pull_request:
-    paths: ["scrapers/**", ".github/workflows/scraper-live-check.yml"]
+    # Only when adapter code changes: every run is real traffic to the shops.
+    paths: ["scrapers/dutyfree_scrapers/adapters/**", "scrapers/dutyfree_scrapers/probe.py"]
   workflow_dispatch:
 
 jobs:

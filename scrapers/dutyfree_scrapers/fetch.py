@@ -33,7 +33,12 @@ class PoliteClient:
             parser = urllib.robotparser.RobotFileParser()
             try:
                 resp = self._client.get(urljoin(origin, "/robots.txt"))
-                parser.parse(resp.text.splitlines() if resp.status_code == 200 else [])
+                if resp.status_code in (401, 403):
+                    # The site refuses us outright: treat as "disallow everything", the
+                    # same rule Python's urllib.robotparser and Google's crawler use.
+                    parser.disallow_all = True
+                else:
+                    parser.parse(resp.text.splitlines() if resp.status_code == 200 else [])
             except httpx.HTTPError:
                 parser.parse([])
             crawl_delay = parser.crawl_delay(USER_AGENT)
