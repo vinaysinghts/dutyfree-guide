@@ -73,4 +73,4 @@ def test_shopdutyfree_paginates_with_p():
     adapter = ADAPTERS["shopdutyfree"]("https://bengaluru.shopdutyfree.com")
     from bs4 import BeautifulSoup
     url = adapter.next_page_url(BeautifulSoup("<html></html>", "html.parser"), adapter.category_urls()[0], 2)
-    assert "p=2" in url and "product_list_limit=100" in url
+    assert url.endswith("/en/92/wines-spirits/whisky?p=2")

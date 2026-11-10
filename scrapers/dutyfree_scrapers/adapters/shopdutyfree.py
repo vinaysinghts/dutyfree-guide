@@ -17,12 +17,20 @@ from ..normalize import detect_currency, parse_price, parse_volume_ml
 from ._html import absolute, first_attr, first_text, rel_next, with_page_param
 from .base import Adapter
 
-# Real paths from the live BLR home page (Scraper live check, 2026-11-09). The
-# "92" segment is the store id; "view-all-liquor" covers every spirits and wine
-# subcategory, so one listing is enough.
+# Real paths from the live BLR home page (Scraper live check, 2026-11-09); "92"
+# is the store id. The first daily run showed "view-all-liquor" ignores ?p=2 (page 2
+# repeated page 1's 40 bottles), so crawl each subcategory, each up to 40 per page.
+# Products listed in two subcategories are de-duplicated by the crawl loop.
 LIQUOR_CATEGORIES = [
-    # 100 per page (the largest the site offers) means fewer requests at the 30 s crawl delay.
-    "/en/92/wines-spirits/view-all-liquor?product_list_limit=100",
+    "/en/92/wines-spirits/whisky",
+    "/en/92/wines-spirits/other-spirits/vodka",
+    "/en/92/wines-spirits/other-spirits/rum",
+    "/en/92/wines-spirits/other-spirits/gin",
+    "/en/92/wines-spirits/other-spirits/tequila-mezcal",
+    "/en/92/wines-spirits/other-spirits/spirit-drink",
+    "/en/92/wines-spirits/cognac-brandy",
+    "/en/92/wines-spirits/wine",
+    "/en/92/wines-spirits/champagne-sparkling-wine",
 ]
 
 # Magento markup, checked against the live BLR listing (Scraper live check, 2026-11-09):
