@@ -32,7 +32,10 @@ class SupabaseStore:
         prefer.append("return=representation" if returning else "return=minimal")
         params = {"on_conflict": on_conflict} if on_conflict else None
         resp = self._client.post(f"/{table}", json=rows, params=params, headers={"Prefer": ",".join(prefer)})
-        resp.raise_for_status()
+        if resp.is_error:
+            # PostgREST puts the Postgres error (code, message, hint) in the body; without
+            # it a 500 is undiagnosable from the CI log.
+            raise httpx.HTTPStatusError(f"{resp.status_code} from {table}: {resp.text[:500]}", request=resp.request, response=resp)
         return resp.json() if returning else []
 
     def retailers(self) -> list[dict]:
@@ -43,6 +46,8 @@ class SupabaseStore:
     def save_prices(self, retailer_id: int, products: list[ScrapedProduct]) -> int:
         # Multipacks can't be compared bottle-for-bottle, so they aren't stored.
         products = [p for p in products if not is_multipack(p.name, p.url)]
+        # One row per match_key: Postgres rejects an upsert batch that touches a row twice.
+        products = list({p.key: p for p in reversed(products)}.values())[::-1]
         if not products:
             return 0
         rows = [{
