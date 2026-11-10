@@ -6,6 +6,48 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ---
 
+## #12: Every BLR category was fetched twice (2026-11-10)
+
+**Situation.** A healthy run saved 218 prices, but the log showed `page 2` returning exactly the
+same count as `page 1` in all 9 categories (whisky 42/42, vodka 38/38, …). Spotted while another
+thread was reading the deploy log.
+
+**Cause.** The adapter always built `?p=N` for the next page. BLR shows a whole subcategory on one
+page and ignores `?p`, so page 2 was page 1 again. The crawl's "no new products" check did stop
+there, so no data was wrong, but each run made 9 wasted requests. At the shop's 30 s crawl delay
+that is about 4.5 extra minutes and twice the traffic, which can't help with the Akamai rate-limit
+block in #9. The log line also counted products before de-duplication, which hid what happened.
+
+**Fix.** Only follow a pager the page actually renders (`rel="next"` or Magento's
+`.pages-item-next a`). No pager means one page. The log now prints `N products, M new`.
+
+**Lesson.** A guard that stops a loop ("no new items") is a safety net, not a design: it still
+pays for one wasted request per loop. Ask the page whether there is a next page instead of guessing
+the URL. And log the number that the decision is based on.
+
+---
+
+
+## #11: The full BLR crawl fetched 230 bottles, then the save failed with a 500 (2026-11-10)
+
+**Situation.** After switching BLR to per-category crawling, a run fetched all 9 categories and
+then `POST /products?on_conflict=match_key` returned **500**. The log had no detail.
+
+**Cause.** The crawl de-duplicated against products *from earlier pages*, but not *within* a
+page. When two listings normalize to the same `match_key` (the same bottle listed twice, say
+plain and gift-boxed), both went into one upsert. Postgres refuses an `INSERT … ON CONFLICT DO
+UPDATE` that touches the same row twice (`21000 cardinality_violation`), and PostgREST maps that
+error class to HTTP 500.
+
+**Fix.** De-duplicate per page in the crawl loop and again in `save_prices` (defence in depth),
+and include PostgREST's error body in the exception so the next 500 is diagnosable from the log.
+
+**Lesson.** Upserts need unique keys *within the batch*, not just against the table. And an
+error without its body costs a full re-run (here, 10 minutes of polite crawling) to diagnose:
+always log what the server said.
+
+---
+
 ## #10: The auto-screenshot vanished before the form could show it (2026-11-10)
 
 **Situation.** The "Report a problem" button takes a screenshot, parks it in a module variable,

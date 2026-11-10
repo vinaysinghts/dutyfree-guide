@@ -14,7 +14,7 @@ from bs4 import BeautifulSoup
 
 from ..models import ScrapedProduct
 from ..normalize import detect_currency, parse_price, parse_volume_ml
-from ._html import absolute, first_attr, first_text, rel_next, with_page_param
+from ._html import absolute, first_attr, first_text, rel_next
 from .base import Adapter
 
 # Real paths from the live BLR home page (Scraper live check, 2026-11-09); "92"
@@ -88,5 +88,14 @@ class ShopDutyFreeAdapter(Adapter):
         return products
 
     def next_page_url(self, soup: BeautifulSoup, current_url: str, page: int) -> str | None:
-        # Magento pages with ?p=N.
-        return rel_next(soup, self.base_url) or with_page_param(current_url, "p", page)
+        # Magento paginates with ?p=N, but only follow it when the page itself shows a
+        # pager. BLR renders every bottle of a subcategory on one page and serves the
+        # same page again for ?p=2, which cost an extra polite request per category
+        # (problems log #12).
+        nxt = rel_next(soup, self.base_url)
+        if nxt:
+            return nxt
+        link = soup.select_one(".pages-item-next a[href], a.action.next[href]")
+        if link:
+            return absolute(self.base_url, link.get("href"))
+        return None
