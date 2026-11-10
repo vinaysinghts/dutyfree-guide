@@ -6,23 +6,28 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ---
 
-## #10: The full BLR crawl fetched 230 bottles, then the save failed with a 500 (2026-11-10)
+## #10: The auto-screenshot vanished before the form could show it (2026-11-10)
 
-**Situation.** After switching BLR to per-category crawling, a run fetched all 9 categories and
-then `POST /products?on_conflict=match_key` returned **500**. The log had no detail.
+**Situation.** The "Report a problem" button takes a screenshot, parks it in a module variable,
+then navigates to the form, which takes it with `takeCapture()` (read once, then cleared, so an
+old picture can't leak into a later report). In the browser test the form always showed no
+screenshot, and nothing was logged, so the capture itself had worked.
 
-**Cause.** The crawl de-duplicated against products *from earlier pages*, but not *within* a
-page. When two listings normalize to the same `match_key` (the same bottle listed twice, say
-plain and gift-boxed), both went into one upsert. Postgres refuses an `INSERT … ON CONFLICT DO
-UPDATE` that touches the same row twice (`21000 cardinality_violation`), and PostgREST maps that
-error class to HTTP 500.
+**Investigation.** No warning from `captureCurrentScreen()` meant it returned an image. So the
+hand-off was the suspect. The form read the capture inside a `useState` initializer. A log line
+in that initializer printed **four times** for one tap, even in the production web build: Expo
+Router mounts the modal screen more than once while it sets up the route, and each mount runs the
+initializer again. The first mount took the screenshot and cleared it; the mount that stayed on
+screen found nothing.
 
-**Fix.** De-duplicate per page in the crawl loop and again in `save_prices` (defence in depth),
-and include PostgREST's error body in the exception so the next 500 is diagnosable from the log.
+**Fix.** Make the read idempotent: `recentCapture()` returns the stashed screenshot without
+clearing it, and it expires 30 seconds after the tap instead. The stale-picture risk is still
+covered, but by time rather than by "read once". A unit test pins the behaviour, and the browser
+check now shows the screenshot.
 
-**Lesson.** Upserts need unique keys *within the batch*, not just against the table. And an
-error without its body costs a full re-run (here, 10 minutes of polite crawling) to diagnose:
-always log what the server said.
+**Lesson.** "Consume on read" is a hidden side effect, and React is allowed to run initializers and
+mount components more often than you expect (Strict Mode does it on purpose in development). Make
+reads pure and put the expiry somewhere explicit. It's the same reasoning as idempotent HTTP GETs.
 
 ---
 

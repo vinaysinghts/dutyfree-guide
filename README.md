@@ -51,6 +51,13 @@ The hosted project is `pkywwbvqpwomvbldgbyw` (its URL is in `.github/workflows/s
 4. Make yourself an admin after your first price report:
    `insert into admins values ('<your auth user id>');` (SQL editor; the id is under Authentication → Users).
 
+5. **Problem reports → GitHub issues** (optional, ADR-0010). Create a
+   [fine-grained token](https://github.com/settings/personal-access-tokens/new) with access to
+   **only this repository** and **Issues: Read and write** (nothing else), and save it as the repo
+   secret `ISSUES_GITHUB_TOKEN`. Then run **Supabase deploy** again: it deploys the `file-issue`
+   function and hands it the token. Until then, reports from the app's bug icon are saved in
+   `issue_reports` and filed by the hourly **Sync app problem reports** job once the token exists.
+
 For local development, copy `client/.env.example` to `client/.env` and fill in the URL and the
 publishable key.
 

@@ -5,12 +5,17 @@ import { useEffect } from 'react';
 import 'react-native-reanimated';
 
 import { AgeGate } from '@/components/AgeGate';
+import { ReportIssueButton } from '@/components/ReportIssueButton';
 import { useColorScheme } from '@/components/useColorScheme';
+import { installDiagnostics } from '@/lib/diagnostics';
 import { TripProvider } from '@/lib/trip';
 
 export { ErrorBoundary } from 'expo-router';
 
 export const unstable_settings = { anchor: '(tabs)' };
+
+// Remember recent errors so problem reports can include them (lib/diagnostics.ts).
+installDiagnostics();
 
 SplashScreen.preventAutoHideAsync();
 
@@ -38,7 +43,8 @@ function RootLayoutNav() {
         <TripProvider>
           <Stack>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="review" options={{ title: 'Review price reports' }} />
+            <Stack.Screen name="review" options={{ title: 'Review price reports', headerRight: () => <ReportIssueButton /> }} />
+            <Stack.Screen name="report-issue" options={{ title: 'Report a problem', presentation: 'modal' }} />
           </Stack>
         </TripProvider>
       </AgeGate>
