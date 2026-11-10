@@ -7,7 +7,10 @@ import type { Offer, PriceRow, RankedProduct } from './types';
  * Kept free of React and Supabase so it can be unit tested and reused (e.g.
  * on a server for SEO pages later).
  */
-export function rankProducts(rows: PriceRow[], opts: { query?: string } = {}): RankedProduct[] {
+export function rankProducts(
+  rows: PriceRow[],
+  opts: { query?: string; airports?: string[]; minAirports?: number } = {},
+): RankedProduct[] {
   const query = opts.query?.trim().toLowerCase();
   const byProduct = new Map<number, PriceRow[]>();
   for (const row of rows) {
@@ -36,11 +39,13 @@ export function rankProducts(rows: PriceRow[], opts: { query?: string } = {}): R
         priced.length > 1 && best.price_inr != null && worst.price_inr != null
           ? round2(worst.price_inr - best.price_inr)
           : null,
+      // In trip order, so every card lists every airport the traveller picked.
+      missing: (opts.airports ?? []).filter((iata) => !offers.some((o) => o.airport_iata === iata)),
     });
   }
 
   // Bottles with a known INR price first (cheapest first); unknown-FX ones last.
-  return ranked.sort((a, b) => compareOffers(a.best, b.best) || a.name.localeCompare(b.name));
+  return ranked.filter((p) => p.offers.length >= (opts.minAirports ?? 1)).sort((a, b) => compareOffers(a.best, b.best) || a.name.localeCompare(b.name));
 }
 
 /** If one airport has several retailers (shop + traveller reports), keep its cheapest offer. */

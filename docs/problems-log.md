@@ -57,6 +57,9 @@ logged what came back. Three rounds, about five minutes each, because BLR's robo
    "no rules, allow all". The convention (Python's `robotparser`, Google) is that 401/403 means
    **disallow all**, and it does now. The live check also runs only when adapter code changes, since
    every run is real traffic to the shop.
+5. **Pagination:** Magento ignores `?p=2` without JavaScript, so page 2 repeats page 1 and the
+   crawl stops (by design). Each subcategory page already lists all its bottles (whisky has 42),
+   so crawling subcategories rather than "view all" is what gets the full catalogue.
 
 **Lesson.** When you can't see the target, build the instrument first. A probe that logs status,
 bot-wall headers, real links and one sample of markup turned "0 products" into three specific,
