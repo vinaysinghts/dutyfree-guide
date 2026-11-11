@@ -6,6 +6,29 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ---
 
+## #13: The daily scrape "failed" because Akamai refused GitHub's runner (2026-11-11)
+
+**Situation.** The first scheduled run saved 0 BLR prices and went red. The log said
+`robots.txt disallows …` for all 9 categories, which reads as if the shop had banned crawling.
+
+**Investigation.** The earlier live-check logs print the robots.txt response body. Every 403 was
+Akamai's "Access Denied" page (`errors.edgesuite.net` reference), not a robots file. Lining up
+yesterday's runs showed 403 and 200 alternating hour by hour (15:13 403, 15:34 200, 15:58 403,
+16:17 200, …), with a different runner IP each time. So it is an edge block that scores some
+datacenter IPs (or our traffic from them) as bots, not a rule the shop wrote. I couldn't test
+from the dev sandbox: the network policy doesn't allow that host there.
+
+**Fix.** A refusal is now its own error, `SiteBlocked`, named after the bot wall's fingerprints.
+We stop asking that site for the rest of the run, log one clear line, and show a warning
+annotation on the run page. A blocked site no longer fails the job; only our own bugs do. We
+don't retry or switch IPs to get through (ADR-0011).
+
+**Lesson.** One status code can mean two things: "no robots.txt" (RFC 9309: crawl) versus "the
+edge is refusing you" (stop). Read the body before deciding what a 403 means. Logs should say
+what happened in the outside world, not which branch the code took.
+
+---
+
 ## #12: Every BLR category was fetched twice (2026-11-10)
 
 **Situation.** A healthy run saved 218 prices, but the log showed `page 2` returning exactly the
@@ -96,8 +119,9 @@ logged what came back. Three rounds, about five minutes each, because BLR's robo
 4. **Then BLR started refusing us too.** About 25 minutes and four probe runs later (roughly 25
    requests, 30 s apart), Akamai (`server: AkamaiGHost`) answered `403 Access Denied` to every
    request, robots.txt included. That exposed a bug: `PoliteClient` treated a 403 on robots.txt as
-   "no rules, allow all". The convention (Python's `robotparser`, Google) is that 401/403 means
-   **disallow all**, and it does now. The live check also runs only when adapter code changes, since
+   "no rules, allow all". Python's `robotparser` treats 401/403 as **disallow all**, and so do we
+   now. (Correction, 2026-11-11: Google and RFC 9309 actually treat any 4xx as "allow". See #13
+   and ADR-0011 for why our case is different.) The live check also runs only when adapter code changes, since
    every run is real traffic to the shop.
 5. **Pagination:** Magento ignores `?p=2` without JavaScript, so page 2 repeats page 1 and the
    crawl stops (by design). Each subcategory page already lists all its bottles (whisky has 42),
