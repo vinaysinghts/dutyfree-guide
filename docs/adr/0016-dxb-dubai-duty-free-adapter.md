@@ -136,3 +136,15 @@ those pages for crawlers. The adapter now uses eight of these real paths in plac
 
 **Open question for run 5:** do those category pages contain product data in their HTML (JSON-LD or markup), or
 only the same empty app shell? If the shell, gate 4 fails for HTML, and the storefront-API decision above applies.
+
+### Run 5, 2026-11-13: gate 4 fails for HTML
+
+All eight real category pages (whisky, vodka, gin, rum, cognac, tequila, brandy, liqueur) answered `200` to our
+own user agent, 5 s apart, with no block. Every one was the **same ~22.4 KB app shell** as the home page: empty
+`<title>`, no text, no JSON-LD, no product markup. Products are filled in by the browser's JavaScript.
+
+**Conclusion.** DXB has no HTML route to prices. Gates 1 and 3 pass. Gate 4 fails as written. Gate 2 (terms)
+is still unread. The only remaining source is the storefront API that the page's JavaScript calls. Under
+ADR-0013 that is an owner decision, taken only after a person has read the terms. **We have not called it.**
+DXB stays traveller-photo only until that decision is made. The adapter stays merged and dark, and its eight
+category paths are correct, so an API-based adapter would reuse them as collection ids.

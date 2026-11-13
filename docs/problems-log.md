@@ -38,6 +38,11 @@ copy the BLR adapter pattern, point it at `dubaidutyfree.com`, convert AED to IN
 - The scheduling problem is flagged to the owner, not changed here: it needs repository settings
   (`SCRAPE_ENABLED=true`, and the default branch set to `main`), which code can't fix.
 
+**Where it ended.** Five live-check runs from GitHub's runners settled the questions we could answer
+politely. robots.txt welcomes crawlers outside the account pages, nothing blocked our honest user agent,
+and the sitemap lists real liquor categories. But every page is the same JavaScript shell, so there is no
+HTML to read. The last step, the shop's storefront API plus its terms, is a decision for the owner (ADR-0016).
+
 **A self-inflicted false negative.** The second live check reported the sitemap as empty, and I nearly wrote
 "DXB has no sitemap URLs" into the ADR. Printing the first 300 bytes showed a normal sitemap index
 with every `<loc>` wrapped in `<![CDATA[…]]>`, which our regex didn't match. A "0 results" from a
