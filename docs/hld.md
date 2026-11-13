@@ -108,6 +108,7 @@ App ──(1) upload screenshots──▶ Storage: issue-screenshots (private)
 | [0008](adr/0008-location-verification.md) | Server-computed location check on reports | Cheap fraud signal vs. spoofable, so advisory only |
 | [0010](adr/0010-in-app-issue-reporting.md) | Problem reports become GitHub issues via an Edge Function, outbox + hourly sweep | Token never in the app, nothing lost vs. at-least-once (rare duplicate issue) and public screenshots |
 | [0011](adr/0011-blocked-is-not-disallowed.md) | A bot-wall 401/403/429 means "blocked": stop, warn, keep the last prices; no retries or IP changes | Stays polite to sites that push back vs. prices can go stale while blocked |
+| [0012](adr/0012-blr-data-without-avolta.md) | Without Avolta: polite scrape + crowd/admin reports; BIAL's product API only after written gates (robots, terms, no spoofing, PII-free whitelist) | Nothing depends on a partner reply vs. BLR freshness rests on the edge and crowd volume |
 
 ## 5. Scaling and failure thinking
 
