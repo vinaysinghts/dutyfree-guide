@@ -9,9 +9,9 @@ of use and the listing markup are all unread. This adapter follows the same
 2. a list of candidate CSS selectors as a fallback,
 3. the crawl stops as soon as a page yields nothing new.
 
-The category paths below are guesses. The Scraper live check prints robots.txt and
-every liquor link on the home page from GitHub's runners; replace the guesses with
-those links before the retailer row is switched on (ADR-0016).
+The category paths below come from the site's sitemap (ADR-0016, run 4). The pages are
+a JavaScript app, so whether they carry any server-rendered product data is what the
+live check answers next; if they don't, see ADR-0016 for the storefront-API decision.
 
 Prices are in AED. AED is pegged to USD, and not an ECB reference currency, so
 fx.py derives its INR rate from USD (ADR-0016).
@@ -26,11 +26,18 @@ from ..normalize import detect_currency, parse_price, parse_volume_ml
 from ._html import absolute, first_attr, first_text, rel_next
 from .base import Adapter
 
-# Guesses; kept short on purpose because every path is a real request to their shop.
+# Real category URLs, from the site's own sitemap (categorySitemap.xml, live check run 4,
+# 2026-11-13). "107" is the liquor root; the numbers are Oracle Commerce collection ids.
+# Spirits first: those are what travellers compare across airports.
 LIQUOR_CATEGORIES = [
-    "/liquor",
-    "/liquor/whisky",
-    "/liquor/spirits",
+    "/whisky/category/10784",
+    "/vodka/category/10765",
+    "/gin/category/107112",
+    "/rum/category/10785",
+    "/cognac/category/107110",
+    "/tequila/category/107113",
+    "/brandy/category/10764",
+    "/liqueur/category/10787",
 ]
 
 CARD_SELECTORS = [".product-item", ".product-tile", ".product-card", "[data-product-id]", "li.product"]

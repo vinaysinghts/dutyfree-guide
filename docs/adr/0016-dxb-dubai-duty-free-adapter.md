@@ -125,3 +125,14 @@ remaining route is the shop's own storefront API. That is the same kind of quest
 two differences in our favour: the API is the platform vendor's *documented* public storefront API, and
 robots.txt does not exclude it. Whether to use it is an owner decision, and gate 2 (terms, read by a person) has to pass
 first either way. We have **not** called the API. Until both happen, DXB stays traveller-photo only.
+
+### Run 4, 2026-11-13
+
+With CDATA handled, the sitemap index lists `staticSitemap`, `categorySitemap` and four `productSitemap-N`
+files, **23,272 URLs** in the three we read. Liquor sits under `/liquor/category/107` with subcategories in the
+form `/<name>/category/<id>`: `/whisky/category/10784`, `/vodka/category/10765`, `/gin/category/107112`,
+`/rum/category/10785`, `/cognac/category/107110` and so on. So DXB does sell liquor online, and publishes
+those pages for crawlers. The adapter now uses eight of these real paths in place of the guesses.
+
+**Open question for run 5:** do those category pages contain product data in their HTML (JSON-LD or markup), or
+only the same empty app shell? If the shell, gate 4 fails for HTML, and the storefront-API decision above applies.
