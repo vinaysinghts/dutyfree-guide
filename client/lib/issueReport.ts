@@ -36,7 +36,7 @@ export type IssueReportInput = {
 
 export type IssueReportResult =
   | { status: 'filed'; issueUrl: string; issueNumber: number }
-  /** Saved; the hourly sync will file it. */
+  /** Saved; the next sync (or deploy) will file it. */
   | { status: 'pending'; reportId: number };
 
 export function validateReport(input: Pick<IssueReportInput, 'description' | 'screenshotUris'>): string | null {

@@ -71,6 +71,39 @@ always log what the server said.
 
 ---
 
+## #11: Problem reports never reached GitHub, and the retry budget hid why (2026-11-13)
+
+**Situation.** A report sent from a phone never turned into a GitHub issue, even after the
+`ISSUES_GITHUB_TOKEN` secret was added. The app had said "saved", and every sync run was green.
+
+**Investigation.** We read the sync job's output (it prints the function's JSON) run by run:
+1. 2026-11-10/11: `"status":"pending","reason":"GitHub filing is not configured yet"`. Expected:
+   the secret wasn't set at deploy time, and only a deploy copies it to the function.
+2. 2026-11-11 18:41, after a deploy with the token: `GitHub 403: Resource not accessible by personal
+   access token`. The token existed but couldn't create issues on this repo (a fine-grained token
+   needs this repository selected **and** Issues: Read and write).
+3. From then on: `{"checked":0}`. The reports had used up their 5 attempts on the 403 and dropped
+   out of the sweep. The job stayed green because there was nothing left to try.
+
+Also visible: the "hourly" schedule actually ran every 4 to 8 hours (GitHub delays scheduled
+workflows on quiet repos), so "posted within the hour" in the app was wrong too.
+
+**Fix.**
+- The function now tells **setup errors** (GitHub 401/403/404: our token or repo is wrong) from
+  **report errors**. A setup error gives the attempt back and leaves the report `pending`, so it files
+  as soon as the token is fixed. Only other failures count towards the 5-attempt limit.
+- A one-off migration resets reports that burned their attempts on those errors.
+- The deploy workflow now sweeps right after setting the secrets and **fails loudly** if GitHub
+  rejects the token, so a bad token shows up the moment it's configured instead of days later.
+- The app says "shortly" instead of "within the hour".
+
+**Lesson.** A retry budget is for transient failures. Spending it on a configuration error turns a
+loud, fixable problem into silent data loss. Classify errors before retrying (who is at fault:
+us, the input, or the network?), and check configuration where it's set (fail the deploy), not
+where it's first used. Also, "green" only means something if the job fails when work is stuck.
+
+---
+
 ## #10: The auto-screenshot vanished before the form could show it (2026-11-10)
 
 **Situation.** The "Report a problem" button takes a screenshot, parks it in a module variable,

@@ -19,7 +19,7 @@
  */
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2';
 
-import { buildIssue, type IssueReportRow } from './issue.ts';
+import { buildIssue, isSetupError, type IssueReportRow } from './issue.ts';
 
 const BUCKET = 'issue-screenshots';
 // Screenshots are shown in the issue through signed URLs. A year covers the
@@ -113,7 +113,7 @@ async function fileReport(db: SupabaseClient, id: number): Promise<Outcome> {
   // Lease the row so two callers can't create two issues for it.
   const { data: claimed, error: claimError } = await db.rpc('claim_issue_report', { p_id: id });
   if (claimError) return { status: 'failed', reason: claimError.message };
-  const report = (claimed as IssueReportRow[] | null)?.[0];
+  const report = (claimed as (IssueReportRow & { attempts: number })[] | null)?.[0];
   if (!report) return { status: 'skipped', reason: 'already being filed, or out of retries' };
 
   try {
@@ -137,8 +137,23 @@ async function fileReport(db: SupabaseClient, id: number): Promise<Outcome> {
     return { status: 'filed', issue_url: issue.html_url, issue_number: issue.number };
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
+    if (e instanceof GitHubError && isSetupError(e.status)) {
+      // Our token is wrong, not the report: give the attempt back and keep it
+      // pending, so it files as soon as the token is fixed (problems log #11).
+      await db
+        .from('issue_reports')
+        .update({ status: 'pending', attempts: Math.max(0, report.attempts - 1), last_error: reason.slice(0, 500) })
+        .eq('id', id);
+      return { status: 'pending', reason };
+    }
     await db.from('issue_reports').update({ status: 'failed', last_error: reason.slice(0, 500) }).eq('id', id);
     return { status: 'failed', reason };
+  }
+}
+
+class GitHubError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
   }
 }
 
@@ -158,7 +173,7 @@ async function createGitHubIssue(issue: { title: string; body: string; labels: s
   let res = await post(issue);
   // A label the token can't create shouldn't lose the report: retry without labels.
   if (res.status === 422) res = await post({ title: issue.title, body: issue.body });
-  if (!res.ok) throw new Error(`GitHub ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) throw new GitHubError(res.status, `GitHub ${res.status}: ${(await res.text()).slice(0, 300)}`);
   return (await res.json()) as { number: number; html_url: string };
 }
 
