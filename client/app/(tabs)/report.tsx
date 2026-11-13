@@ -1,20 +1,24 @@
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
-import { Link } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { Link, useLocalSearchParams } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Platform, Pressable, ScrollView, StyleSheet } from 'react-native';
 
 import { AirportSearch } from '@/components/AirportSearch';
 import { Text, View } from '@/components/Themed';
 import { Button, Card, Chip, Input, Muted, useColors } from '@/components/ui';
+import { allAirports } from '@/lib/airports';
 import { isAdmin, nearestAirports, submitPrice } from '@/lib/api';
 import { CURRENCIES, formatMoney, formatVolume } from '@/lib/format';
 import { AT_AIRPORT_KM, gpsFromExif, takenAtFromExif } from '@/lib/geo';
 import { readText } from '@/lib/ocr';
 import { parseShelfTag, type ShelfTagDraft } from '@/lib/shelfTag';
 import { isDemoMode } from '@/lib/supabase';
+import { useTravelDay } from '@/lib/travelDay';
 import { useTrip } from '@/lib/trip';
-import type { Airport, CaptureLocation } from '@/lib/types';
+import type { Airport, CaptureLocation, SubmissionVia } from '@/lib/types';
+
+const VIA: SubmissionVia[] = ['manual', 'nudge_card', 'nudge_notification'];
 
 const DEFAULT_CURRENCY: Record<string, string> = { IN: 'INR', AE: 'AED', QA: 'QAR', SG: 'SGD', GB: 'GBP', TR: 'TRY', US: 'USD' };
 const currencyFor = (a: Airport | null) => (a ? DEFAULT_CURRENCY[a.country_code] ?? 'EUR' : 'INR');
@@ -25,6 +29,11 @@ type Located = { location: CaptureLocation; airport: Airport | null; km: number 
 export default function ReportScreen() {
   const c = useColors();
   const trip = useTrip();
+  const travelDay = useTravelDay();
+  // Set when a travel-day card or reminder sent the traveller here (ADR-0014).
+  const params = useLocalSearchParams<{ airport?: string; snap?: string; via?: string; nudge?: string }>();
+  const handledParams = useRef<string | null>(null);
+  const [via, setVia] = useState<SubmissionVia>('manual');
 
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [reading, setReading] = useState(false);
@@ -54,6 +63,18 @@ export default function ReportScreen() {
     setAirport(a);
     setCurrency(currencyFor(a));
   };
+
+  // One tap from a nudge: airport chosen, camera open. Runs once per arrival.
+  useEffect(() => {
+    const key = [params.airport, params.snap, params.via, params.nudge].join('|');
+    if (!params.airport || handledParams.current === key) return;
+    handledParams.current = key;
+    const a = trip.airports.find((x) => x.iata === params.airport) ?? allAirports().find((x) => x.iata === params.airport);
+    if (a) pickAirport(a);
+    setVia(VIA.includes(params.via as SubmissionVia) ? (params.via as SubmissionVia) : 'manual');
+    // Browsers only open the camera from a real tap, so on web we stop at the airport.
+    if (params.snap === '1' && Platform.OS !== 'web') takePhoto(true);
+  }, [params.airport, params.snap, params.via, params.nudge]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const reset = () => {
     setPhoto(null);
@@ -168,8 +189,11 @@ export default function ReportScreen() {
         ocrDraft: draft ?? undefined,
         location: located?.location,
         photoTakenAt: photo?.takenAt,
+        via,
       });
+      travelDay.snapped(airport.iata);
       setMessage({ ok: true, text: 'Thanks! Your price will appear once it has been checked.' });
+      setVia('manual');
       reset();
     } catch (e) {
       setMessage({ ok: false, text: e instanceof Error ? e.message : String(e) });

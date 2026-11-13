@@ -1,4 +1,4 @@
-from dutyfree_scrapers.load_airports import parse, to_bundle
+from dutyfree_scrapers.load_airports import TimeZoneLookup, parse, to_bundle
 
 CSV = """id,ident,type,name,latitude_deg,longitude_deg,elevation_ft,continent,iso_country,iso_region,municipality,scheduled_service,icao_code,iata_code,gps_code,local_code,home_link,wikipedia_link,keywords
 1,EHAM,large_airport,Amsterdam Airport Schiphol,52.3086,4.7639,-11,EU,NL,NL-NH,Amsterdam,yes,EHAM,AMS,EHAM,,,,
@@ -32,4 +32,27 @@ def test_bundle_rows_are_compact_and_sorted():
     rows = to_bundle(parse(CSV + CSV_ALIASES.split("\n", 1)[1]))
     assert [r[0] for r in rows] == ["AMS", "BLR", "BSL"]
     assert rows[2] == ["BSL", "LFSB", "EuroAirport Basel–Mulhouse–Freiburg", "Bâle / Mulhouse", "FR",
-                       47.6, 7.52, "MLH, EAP, LSZM, Bâle, Basle", "L"]
+                       47.6, 7.52, "MLH, EAP, LSZM, Bâle, Basle", "L", ""]
+
+
+def test_time_zone_by_iata_then_icao_then_single_zone_country():
+    lookup = TimeZoneLookup(
+        by_iata={
+            "BLR": {"tz": "Asia/Kolkata", "country": "IN"},
+            "PEK": {"tz": "Asia/Shanghai", "country": "CN"},
+            "JFK": {"tz": "America/New_York", "country": "US"},
+            "LAX": {"tz": "America/Los_Angeles", "country": "US"},
+        },
+        by_icao={"EHAM": {"tz": "Europe/Amsterdam", "country": "NL"}},
+    )
+    assert lookup("BLR", "VOBL", "IN") == "Asia/Kolkata"
+    assert lookup("AMS", "EHAM", "NL") == "Europe/Amsterdam"
+    # Unknown Chinese field: China has one zone, so that's safe.
+    assert lookup("XYZ", None, "CN") == "Asia/Shanghai"
+    # Unknown US field: several zones, so don't guess.
+    assert lookup("XYZ", None, "US") == ""
+
+
+def test_bundle_carries_time_zone_column():
+    rows = to_bundle(parse(CSV), lambda iata, icao, cc: {"AMS": "Europe/Amsterdam"}.get(iata, ""))
+    assert [r[9] for r in rows] == ["Europe/Amsterdam", ""]

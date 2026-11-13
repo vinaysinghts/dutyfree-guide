@@ -8,6 +8,7 @@ import { AgeGate } from '@/components/AgeGate';
 import { ReportIssueButton } from '@/components/ReportIssueButton';
 import { useColorScheme } from '@/components/useColorScheme';
 import { installDiagnostics } from '@/lib/diagnostics';
+import { TravelDayProvider } from '@/lib/travelDay';
 import { TripProvider } from '@/lib/trip';
 
 export { ErrorBoundary } from 'expo-router';
@@ -41,11 +42,13 @@ function RootLayoutNav() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AgeGate>
         <TripProvider>
-          <Stack>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="review" options={{ title: 'Review price reports', headerRight: () => <ReportIssueButton /> }} />
-            <Stack.Screen name="report-issue" options={{ title: 'Report a problem', presentation: 'modal' }} />
-          </Stack>
+          <TravelDayProvider>
+            <Stack>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="review" options={{ title: 'Review price reports', headerRight: () => <ReportIssueButton /> }} />
+              <Stack.Screen name="report-issue" options={{ title: 'Report a problem', presentation: 'modal' }} />
+            </Stack>
+          </TravelDayProvider>
         </TripProvider>
       </AgeGate>
     </ThemeProvider>

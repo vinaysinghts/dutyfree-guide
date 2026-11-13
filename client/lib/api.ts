@@ -56,7 +56,7 @@ export async function submitPrice(input: SubmissionInput): Promise<void> {
       .upload(photo_path, blob, { contentType: blob.type || 'image/jpeg' });
     if (error) throw error;
   }
-  const { error } = await supabase.from('price_submissions').insert({
+  const row = {
     submitted_by: userId,
     airport_iata: input.airport_iata,
     product_name: input.product_name || null,
@@ -73,7 +73,15 @@ export async function submitPrice(input: SubmissionInput): Promise<void> {
     capture_accuracy_m: input.location?.accuracyM ?? null,
     location_source: input.location?.source ?? null,
     photo_taken_at: input.photoTakenAt ?? null,
-  });
+    via: input.via ?? 'manual',
+  };
+  let { error } = await supabase.from('price_submissions').insert(row);
+  // The app and the migration that adds `via` ship separately (APK build vs. Supabase deploy).
+  // If the column isn't there yet, send the report without it rather than lose it.
+  if (error?.code === 'PGRST204' && /\bvia\b/.test(error.message)) {
+    const { via: _via, ...withoutVia } = row;
+    ({ error } = await supabase.from('price_submissions').insert(withoutVia));
+  }
   if (error) throw error;
 }
 
