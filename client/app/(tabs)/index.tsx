@@ -2,7 +2,10 @@ import { router } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet } from 'react-native';
 
 import { AirportSearch } from '@/components/AirportSearch';
+import { RemindersSwitch } from '@/components/RemindersSwitch';
+import { StopPlanEditor } from '@/components/StopPlanEditor';
 import { Text, View } from '@/components/Themed';
+import { TravelDayCard } from '@/components/TravelDayCard';
 import { Button, Card, Muted, useColors } from '@/components/ui';
 import { isDemoMode } from '@/lib/supabase';
 import { useTrip } from '@/lib/trip';
@@ -13,6 +16,7 @@ export default function TripScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
+      <TravelDayCard />
       <Text style={styles.title}>Where are you flying?</Text>
       <Muted>Add each airport you'll pass through, including layovers. The order doesn't matter, and a return trip uses the same airports.</Muted>
       {isDemoMode ? (
@@ -29,10 +33,12 @@ export default function TripScreen() {
               <View style={{ flex: 1, backgroundColor: 'transparent' }}>
                 <Text style={{ fontWeight: '600' }}>{a.iata} · {a.city ?? a.name}</Text>
                 <Muted>{a.name}</Muted>
+                <StopPlanEditor iata={a.iata} />
               </View>
               <IconButton label="✕" hint={`Remove ${a.iata}`} onPress={() => trip.remove(a.iata)} />
             </Card>
           ))}
+          <RemindersSwitch />
           <Button title="Compare prices" onPress={() => router.push('/prices')} />
           <Button title="Clear trip" variant="ghost" onPress={trip.clear} />
         </View>

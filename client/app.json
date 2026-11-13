@@ -52,7 +52,13 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "We use your location once, when you snap a price tag, to confirm it was taken at the airport."
+          "locationWhenInUsePermission": "We use your location when you snap a price tag, to confirm it was taken at the airport, and while the app is open, to notice when you're at an airport on your trip. Your location is only sent with a price report."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#E6F4FE"
         }
       ]
     ],

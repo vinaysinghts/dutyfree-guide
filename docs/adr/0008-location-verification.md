@@ -11,6 +11,9 @@ want a cheap signal that the photo was taken at the airport the user picked.
    - **EXIF GPS** in the photo, if present (gallery photos);
    - **live device location** at capture time, for photos just taken with the in-app camera.
    We ask for location permission only when the user snaps a tag, never in the background.
+   *(Update, ADR-0014: once that permission exists, the app also reads a coarse position while it's
+   open to notice a trip airport for the travel-day card. It still never asks just for that, and
+   never runs in the background.)*
 2. **The server decides the verdict.** The app sends raw coordinates. A database trigger computes
    the distance to the airport with the haversine formula and sets
    `location_check` = `at_airport` (≤ 5 km) / `near` (≤ 50 km) / `far` / `unknown`. Whatever verdict a client

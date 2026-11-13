@@ -3,6 +3,10 @@
 Besides the IATA code, name and city, each row keeps the ICAO code and
 OurAirports' `keywords` (other names and codes). Travellers search with any of
 them: "Bangalore" for BLR, "Bombay" for BOM, "MLH" or "Basle" for Basel's BSL.
+
+The app's bundle also carries each airport's IANA time zone (from the MIT
+licensed `airportsdata` package), so the app can turn "09:40 at DXB on
+20 Nov" into an exact instant for a travel-day reminder (ADR-0014).
 """
 
 from __future__ import annotations
@@ -41,8 +45,41 @@ def parse(csv_text: str) -> list[dict]:
     return list({r["iata"]: r for r in reversed(rows)}.values())
 
 
-def to_bundle(rows: list[dict]) -> list[list]:
-    """Compact rows for the app's offline search (client/assets/airports.json)."""
+def time_zones() -> "TimeZoneLookup":
+    import airportsdata
+
+    return TimeZoneLookup(airportsdata.load("IATA"), airportsdata.load("ICAO"))
+
+
+class TimeZoneLookup:
+    """IANA zone for an airport: by IATA, then ICAO, then the country's only zone.
+
+    About 1% of OurAirports' scheduled airports are missing from airportsdata
+    (mostly small Chinese and Pacific fields). If every known airport in that
+    country shares one zone, that zone is right; otherwise we leave it blank
+    and the app falls back to the phone's zone.
+    """
+
+    def __init__(self, by_iata: dict, by_icao: dict):
+        self.by_iata, self.by_icao = by_iata, by_icao
+        zones: dict[str, set[str]] = {}
+        for a in by_iata.values():
+            if a.get("tz") and a.get("country"):
+                zones.setdefault(a["country"], set()).add(a["tz"])
+        self.country_zone = {c: next(iter(z)) for c, z in zones.items() if len(z) == 1}
+
+    def __call__(self, iata: str, icao: str | None, country: str) -> str:
+        hit = self.by_iata.get(iata) or (self.by_icao.get(icao) if icao else None)
+        if hit and hit.get("tz"):
+            return hit["tz"]
+        return self.country_zone.get(country, "")
+
+
+def to_bundle(rows: list[dict], tz_for=None) -> list[list]:
+    """Compact rows for the app's offline search (client/assets/airports.json).
+
+    Column 10 is the IANA time zone ("" when unknown).
+    """
     out = []
     for r in sorted(rows, key=lambda r: r["iata"]):
         out.append([
@@ -50,6 +87,7 @@ def to_bundle(rows: list[dict]) -> list[list]:
             round(r["latitude"], 4) if r["latitude"] is not None else None,
             round(r["longitude"], 4) if r["longitude"] is not None else None,
             r["keywords"] or "", r["size"],
+            tz_for(r["iata"], r["icao"], r["country_code"]) if tz_for else "",
         ])
     return out
 
@@ -71,6 +109,6 @@ def load() -> None:
 
 def export_bundle(out: Path, csv_path: Path | None = None) -> int:
     text = csv_path.read_text(encoding="utf-8") if csv_path else fetch_csv()
-    rows = to_bundle(parse(text))
+    rows = to_bundle(parse(text), time_zones())
     out.write_text(json.dumps(rows, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
     return len(rows)

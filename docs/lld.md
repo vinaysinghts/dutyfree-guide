@@ -42,7 +42,7 @@ issue_reports (reporter → auth.users)   storage: issue-screenshots/<uid>/<repo
 | `prices` | **Append-only** history (never updated). Gives price charts later for free and makes scrape runs idempotent-ish. |
 | `latest_prices` (view) | `DISTINCT ON (product_id, retailer_id) … ORDER BY observed_at DESC` = the newest row per pair, converted to INR. `security_invoker` so RLS still applies. |
 | `fx_rates` | INR per 1 unit. One row per currency, overwritten daily. |
-| `price_submissions` | Review queue. Typed fields are optional when `photo_path` is set (CHECK `photo_or_details`). Stores `ocr_text`, `ocr_draft`, capture coordinates, `photo_taken_at`, and the trigger-computed `distance_km` / `location_check`. Partial index on `status='pending'` keeps the queue query fast. |
+| `price_submissions` | Review queue. Typed fields are optional when `photo_path` is set (CHECK `photo_or_details`). Stores `ocr_text`, `ocr_draft`, capture coordinates, `photo_taken_at`, and the trigger-computed `distance_km` / `location_check`. `via` (`manual` / `nudge_card` / `nudge_notification`) records what started the report, to measure travel-day nudges (§3.10). Partial index on `status='pending'` keeps the queue query fast. |
 | `admins` | Membership table read by `is_admin()`. |
 | `issue_reports` | In-app problem reports, used as an **outbox** for GitHub issues (§3.8). Client writes `category`, `description`, `screenshot_paths`, `context` (jsonb, ≤ 16 KB). The function owns `status` (`pending → filing → filed`/`failed`), `attempts`, `claimed_at`, `last_error`, `github_issue_number/url`. Partial index on unfiled rows for the sweep. |
 
@@ -172,13 +172,94 @@ an app update; acceptable, since airports open a few times a year.
   `<details>` block with a fence longer than any backtick run inside, and the
   `<!-- app-report:<id> -->` marker. `neutralize()` breaks `@mentions` with a zero-width space.
 
+### 3.9 Airport time → instant: `client/lib/zonedTime.ts → zonedToInstant(date, time, tz)`
+
+The problem: "09:40 on 20 Nov at DXB" must become an exact instant while the phone sits in India
+time. JS can *display* an instant in any zone (`Intl.DateTimeFormat({timeZone})`) but can't
+*construct* one from a zone, so we invert the display function:
+
+```
+wall   = Date.UTC(2026, 10, 20, 9, 40)        // pretend the wall clock is UTC
+off1   = offset(tz, at = wall)                // e.g. +240 min for Asia/Dubai
+t      = wall − off1
+off2   = offset(tz, at = t)                   // re-check: DST may differ at the real instant
+if off2 ≠ off1: t = wall − off2
+offset(tz, at) = (the wall clock Intl shows for `at` in tz, read back as UTC) − at
+```
+
+- **Why two passes:** the offset depends on the instant we're solving for. One pass is wrong for
+  the hour around a DST change.
+- **Gap** (spring-forward, 02:30 doesn't exist): lands on 03:30 local. Later, never earlier, which
+  is the safe side for a reminder. **Overlap** (02:30 happens twice): one of the two, both valid.
+- **Unknown zone or no `Intl` zone data** → `offsetMinutes` falls back to the phone's zone. Wrong by
+  the zone difference, but never crashes.
+- Tested with Dubai (+4), India (+5:30), Nepal (+5:45), and Amsterdam summer, winter, gap and overlap.
+  The test script pins `TZ=Asia/Kolkata`, so "phone zone ≠ airport zone" is always exercised.
+- Zones come from the bundle's 10th column (`airportTimeZone(iata)` in `lib/airports.ts`), built by
+  `TimeZoneLookup` in `scrapers/load_airports.py`: IATA → ICAO → the country's only zone → "".
+
+### 3.10 Travel-day nudges (ADR-0014)
+
+```
+ trip.airports + trip.plans ──▶ stops[] {iata, date?, time?, tz}
+                                   │
+  history (on device) ──settle()──▶ planNudges(stops, history, now, enabled) ──▶ PlannedNudge[]
+                                   │                                              │
+                                   │                         reconcileReminders() ▼ (native only)
+                                   │                OS scheduled notifications (kind = travel-nudge)
+                                   ▼
+             activeNudge(stops, history, now, hereIata) ──▶ <TravelDayCard/>  (all platforms)
+                                                                │ tap
+ tapped reminder ──onReminderOpened──▶ recordOpened ──┐         ▼
+                               /report?airport=DXB&snap=1&via=nudge_card|nudge_notification
+                                     │ camera opens (native), airport pre-selected
+                                     ▼ submit
+                     price_submissions.via, travelDay.snapped(iata) → recordSnap
+```
+
+**`planNudges`**: pure, idempotent.
+1. Return `[]` if reminders are off, or `ignoredStreak(history) ≥ 3`.
+2. For each stop with a valid date: `fireTimeFor` = departure − 75 min if there's a time, else
+   08:00 airport time. Skip if it's in the past, or that `iata:date` already fired or was dismissed,
+   or the traveller reported at that airport within 7 days of the fire time.
+3. Rank: `flight`-kind first, then trip order. Pick greedily: skip if the date already has 2, or
+   another pick is within 3 h. Stop at 4.
+
+**`settle(history, now)`**: pending events whose `fireAt + 2 h < now` become `ignored`.
+**`ignoredStreak`**: count fired events newest first, stopping at an `opened` one or one older than
+the last snap. **`recordScheduled(history, planned, now)`**: adds new or retimed pending events and
+drops future pending ones that are no longer planned. It keeps ones that already fired, even if
+not settled yet: dropping them would forget we asked (and a test covers this).
+
+**`reconcileReminders(planned)`** (`lib/notifications.ts`): list scheduled notifications where
+`data.kind = 'travel-nudge'` → cancel any whose id isn't planned or whose `data.fireAt` changed →
+schedule the rest with `identifier = 'nudge:<IATA>:<date>'` and a `DATE` trigger on the
+`travel-day` Android channel. A stable identifier means re-running it can't double-book.
+
+**`TravelDayProvider`** (`lib/travelDay.tsx`) owns the state and side effects:
+- AsyncStorage keys `nudge.prefs.v1` (`remindersOn`) and `nudge.history.v1`; `trip.plans.v1` holds dates and times.
+- Re-plans when the stops, the switch, permission, the hour, the snap count or the dismiss count change.
+  It deliberately does *not* depend on the whole `history`: every reconcile writes history, so that
+  would loop forever.
+- "Here" check: only if location permission is already granted; last-known position (≤ 10 min old)
+  or one low-accuracy fix; at most every 10 minutes; not on web.
+
+**Report screen** reads `airport`, `snap`, `via`, `nudge` route params once per distinct set
+(`useRef` guard), pre-selects the airport, and calls `takePhoto(true)` on native. Browsers only
+open a camera from a real tap, so on web it stops at the airport.
+
 ## 4. Client modules
 
 | Module | Responsibility |
 |---|---|
 | `lib/api.ts` | All I/O. Demo-data fallback when env vars are missing. Converts PostgREST `numeric` strings to numbers. |
 | `lib/supabase.ts` | Client creation; AsyncStorage for sessions on native; `ensureSession()` signs in anonymously on first report. |
-| `lib/trip.tsx` | React context holding the ordered airport list, persisted on device. |
+| `lib/trip.tsx` | React context holding the ordered airport list and optional per-airport date/time (`plans`), persisted on device. |
+| `lib/zonedTime.ts` | Airport wall-clock time ⇄ instant via `Intl` (§3.9). Pure. |
+| `lib/nudge.ts` | Travel-day nudge policy: what to schedule, which card to show, fatigue limits (§3.10). Pure. |
+| `lib/notifications.ts` / `.web.ts` | Local reminders via expo-notifications: permission, reconcile, tap handling / no-ops on web. |
+| `lib/travelDay.tsx` | Provider wiring trip + policy + reminders + location + storage. |
+| `components/TravelDayCard.tsx`, `StopPlanEditor.tsx`, `RemindersSwitch.tsx` | The card, the "when are you here?" fields, the opt-in switch. |
 | `lib/compare.ts` | Pure ranking logic (above). |
 | `components/AgeGate.tsx` | 18+ confirmation, required by app stores for alcohol content. |
 | `components/AirportSearch.tsx` | 200 ms debounced search; cancels stale responses. |

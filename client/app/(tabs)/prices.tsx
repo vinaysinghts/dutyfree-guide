@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Linking, Pressable, RefreshControl, StyleSheet } from 'react-native';
 
 import { Text, View } from '@/components/Themed';
+import { TravelDayCard } from '@/components/TravelDayCard';
 import { Card, Chip, Input, Muted, useColors } from '@/components/ui';
 import { pricesAt } from '@/lib/api';
 import { rankProducts } from '@/lib/compare';
@@ -69,6 +70,7 @@ export default function PricesScreen() {
       refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
       ListHeaderComponent={
         <View style={{ gap: 8, backgroundColor: 'transparent' }}>
+          <TravelDayCard />
           <Text style={styles.title}>Prices at {iatas.join(', ')}</Text>
           <Muted>Every airport's price for each bottle, in INR at today's rates. Cheapest bottles first.</Muted>
           {freshness ? <Muted>Prices updated: {freshness}</Muted> : null}

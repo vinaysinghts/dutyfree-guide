@@ -14,6 +14,7 @@
     "expo-image-picker": "~58.0.10",
     "expo-linking": "~58.0.16",
     "expo-location": "~58.0.20",
+    "expo-notifications": "~58.1.9",
     "expo-router": "~58.0.30",
     "expo-splash-screen": "~58.0.13",
     "expo-status-bar": "~58.0.4",
@@ -43,7 +44,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "test": "tsx --test lib/*.test.ts ../supabase/functions/file-issue/*.test.ts",
+    "test": "TZ=Asia/Kolkata tsx --test lib/*.test.ts ../supabase/functions/file-issue/*.test.ts",
     "typecheck": "tsc --noEmit",
     "postinstall": "node scripts/copy-ocr-assets.js"
   },

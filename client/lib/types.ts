@@ -54,6 +54,9 @@ export type CaptureLocation = {
   source: 'device' | 'exif';
 };
 
+/** How the traveller got to the report screen; lets us measure whether nudges work (ADR-0014). */
+export type SubmissionVia = 'manual' | 'nudge_card' | 'nudge_notification';
+
 /** A report: either a photo (fields optional, read by OCR) or typed details. */
 export type SubmissionInput = {
   airport_iata: string;
@@ -68,6 +71,7 @@ export type SubmissionInput = {
   ocrDraft?: unknown;
   location?: CaptureLocation;
   photoTakenAt?: string;
+  via?: SubmissionVia;
 };
 
 export type LocationCheck = 'at_airport' | 'near' | 'far' | 'unknown';

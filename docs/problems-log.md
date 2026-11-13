@@ -6,6 +6,75 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ---
 
+## #15: The reminder history could forget it had already asked (2026-11-13)
+
+**Situation.** Travel-day reminders keep a small history on the phone: what was scheduled, and
+whether each one was opened or ignored. Two rules depend on it: "one reminder per airport per
+date, ever" and "stop after three ignored in a row". The first draft of `recordScheduled` replaced
+the pending entries with whatever the planner returned this time.
+
+**Investigation.** I walked through a timeline. BLR's reminder fires at 08:00. At 08:30 the
+traveller opens the app and edits the trip. The planner leaves BLR out, correctly, because its time
+has passed. But `settle` only marks a reminder "ignored" two hours after it fires. So at 08:30 the
+BLR entry was still `pending` and not in the new plan, and it got deleted. Result: the back-off
+never counted it, and if the traveller then moved the flight time later, BLR would be asked
+*again*. That's the nagging the limits exist to prevent. A second trap was in the React wiring: the
+effect that reconciles reminders writes the history, so making it depend on `history` would re-run
+it forever.
+
+**Fix.** `recordScheduled(history, planned, now)` now drops only *future* pending entries that
+are no longer planned. Anything whose time has passed is kept until `settle` judges it. A unit
+test reproduces the 08:30 edit. The effect depends on just the parts of history a person changes
+(number of reports, number of dismissals), with a comment saying why.
+
+**Lesson.** When state has a lifecycle (`pending → opened | ignored`), list the transitions and ask
+what happens in the gap between two of them. Bugs live in the windows: here, the two hours between
+"fired" and "judged". Pure functions made this cheap to find and to pin with a test: no simulator,
+no waiting for a real notification.
+
+---
+
+## #14: "09:40 at Dubai" while the phone is on India time (2026-11-13)
+
+**Situation.** Travel-day reminders need an exact instant: "75 minutes before your DXB flight".
+People type their flight in local airport time, usually days before, at home. JavaScript's `Date`
+only understands the phone's own zone and UTC. Reading 09:40 as phone time would fire 1.5 hours
+late for Dubai, and 4.5 hours early for Amsterdam. Our airport data had no time zones at all.
+
+**Investigation.**
+- *Where to get zones.* OurAirports (our airport source) has no zone column. Working out a zone
+  from latitude and longitude needs zone-boundary maps (megabytes). The MIT-licensed
+  `airportsdata` package maps IATA → IANA zone. It covered 3,192 of our 3,245 airports by IATA,
+  and 15 more by ICAO. The 38 left were mostly small Chinese fields. China has one zone, so "if
+  every known airport in the country shares one zone, use it" fixed 35. The last 3 are in
+  multi-zone countries: we leave them blank and fall back to the phone's zone, rather than guess.
+- *Converting without a library.* `Intl.DateTimeFormat` can show an instant in any zone but can't
+  build one. Inverting it takes two passes, because the offset depends on the answer around DST
+  (LLD §3.9). I wrote tests for the DST gap and overlap in Amsterdam, plus India's +5:30 and
+  Nepal's +5:45.
+- *My own test was wrong.* I asserted that 23:30 UTC on the 19th is "still the 19th in
+  Amsterdam". It's 00:30 on the 20th there. The code was right and the test was wrong, which is
+  exactly the mistake this feature exists to prevent. The test script now pins `TZ=Asia/Kolkata`,
+  so every run has phone zone ≠ airport zone, as in real use.
+- *Rebuilding the bundle.* The dev sandbox can't reach OurAirports (proxy 403). So the time-zone
+  column was added to the existing `airports.json` with the same `TimeZoneLookup` that
+  `dutyfree-scrape airports --export` now uses. The next full export produces the same column.
+
+**Fix.** Bundle column 10 = IANA zone. `airportTimeZone(iata)` looks it up. Trip dates and times
+are stored as airport-local strings and turned into instants only when scheduling. A scheduled
+reminder is an absolute instant, so the phone switching zones on landing doesn't move it.
+
+**Still to verify on a device.** Hermes (React Native's JS engine) must support `Intl` with
+`timeZone` on both platforms. If it doesn't, `offsetMinutes` falls back to the phone's zone. That
+fails safe (no crash), but reminders would be off by the zone difference. First check on the next
+APK: set a DXB time from India and look at the scheduled time.
+
+**Lesson.** Store human time as the human said it (local date, local time, *and where*), and convert
+at the edge where you need an instant. A UTC timestamp throws away the "where", and you need the
+"where" again the moment you show it back to the traveller.
+
+---
+
 ## #13: The daily scrape "failed" because Akamai refused GitHub's runner (2026-11-11)
 
 **Situation.** The first scheduled run saved 0 BLR prices and went red. The log said

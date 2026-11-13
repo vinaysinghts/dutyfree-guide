@@ -20,7 +20,9 @@ before flying, **where on their route each bottle is cheapest**, in their home c
 3. Report a price by snapping the shelf tag; details are read from the photo, the location is
    checked against the airport, and it shows to others only after review.
 4. Admins review reports (approve / reject, optionally linking to an existing product).
-5. Report a problem from any screen: a screenshot, a note and device/app details become a GitHub
+5. On travel day, nudge the traveller to snap a shelf: an opt-in reminder timed from their flight,
+   plus an in-app card, with one tap to the camera ([ADR-0014](adr/0014-travel-day-nudges.md)).
+6. Report a problem from any screen: a screenshot, a note and device/app details become a GitHub
    issue on this repo, ready to pick up and fix.
 
 **Non-functional**
@@ -79,6 +81,19 @@ trigger computes the distance to the airport and the `location_check` verdict. A
 (photo, OCR text, location verdict), corrects fields, and approves via `review_submission()`, which
 writes a `prices` row with `source = 'crowd'`.
 
+**Travel-day nudge (all on the device).** The traveller optionally gives each trip airport a
+date and a departure time, both in airport-local time. A pure policy (`planNudges`) decides which
+reminders should exist, within the fatigue limits. A reconcile step makes the OS's scheduled local
+notifications match. Tapping the reminder, or the in-app card, opens the camera with the airport
+chosen, and the normal crowd write path takes over, tagged `via = nudge_*`. No server, no push
+tokens, and the trip never leaves the phone, so the reminder fires even with roaming off.
+Full reasoning: [ADR-0014](adr/0014-travel-day-nudges.md).
+
+```
+trip + dates ─▶ planNudges ─▶ reconcile ─▶ OS alarm ─(T−75 min)─▶ "At DXB duty free?" ─tap─▶ camera
+             └▶ activeNudge (+ "you're here" if location already allowed) ─▶ in-app card ─tap─┘
+```
+
 **Problem reports (app → GitHub issue).** Tap the bug icon → the app screenshots the current
 screen → the user adds a note → screenshots go to a private bucket and an `issue_reports` row is
 inserted (the outbox) → the app calls the `file-issue` Edge Function, which holds the GitHub token,
@@ -110,6 +125,7 @@ App ──(1) upload screenshots──▶ Storage: issue-screenshots (private)
 | [0010](adr/0010-in-app-issue-reporting.md) | Problem reports become GitHub issues via an Edge Function, outbox + hourly sweep | Token never in the app, nothing lost vs. at-least-once (rare duplicate issue) and public screenshots |
 | [0011](adr/0011-blocked-is-not-disallowed.md) | A bot-wall 401/403/429 means "blocked": stop, warn, keep the last prices; no retries or IP changes | Stays polite to sites that push back vs. prices can go stale while blocked |
 | [0012](adr/0012-display-currency.md) | *Proposed:* user-picked display currency, converted on the device from the INR pivot; shelf price always shown | No API change vs. estimates differ from card rates |
+| [0014](adr/0014-travel-day-nudges.md) | Travel-day nudges as on-device local reminders + in-app card; airport-local times via bundled IANA zones; strict fatigue limits | Offline, private and serverless vs. no server-side targeting and phone-app-only reminders |
 
 ## 5. Scaling and failure thinking
 
@@ -131,5 +147,7 @@ App ──(1) upload screenshots──▶ Storage: issue-screenshots (private)
 1. Matching quality is the product's real moat. Measure it (% of products seen at ≥2 airports) and
    move to fuzzy matching or a curated catalogue when it plateaus.
 2. Partnerships: a retailer feed beats scraping on reliability and legality. Scraping is the bootstrap.
-3. SEO landing pages ("cheapest Black Label at AMS") would be the growth channel. That's the trigger
+3. Crowd supply is now the bottleneck for BLR. Watch `via` on reports (ADR-0014 §6). If nudges
+   work, the next lever is server-side targeting: ask travellers at airports whose prices are stalest.
+4. SEO landing pages ("cheapest Black Label at AMS") would be the growth channel. That's the trigger
    to revisit ADR-0001 (Next.js for the web).
