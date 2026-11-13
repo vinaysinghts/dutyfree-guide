@@ -6,6 +6,28 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ---
 
+## #14: The partner wouldn't answer, so we found who else had the data (2026-11-13)
+
+**Situation.** BLR's shop (shopdutyfree.com, run by Avolta) intermittently blocks our scraper, and
+the email asking Avolta for a feed went nowhere. No affiliate programme covers India.
+
+**Investigation.** We stopped treating it as a technical problem and asked who else legitimately has
+this data, and why. The public record showed BLR duty free is a 50:50 joint venture of Avolta and BIAL, the airport.
+The airport's website lists the same catalogue. The browser's Network tab showed it loads from BIAL's own product API, and
+`merchantId: "dufry"` plus Avolta's SAP numbers proved the catalogue is synced into BIAL's platform
+rather than scraped. The JSON was ideal, but it also returned staff names, phone numbers and emails on every
+product, and the API host's robots.txt appears to turn crawlers away.
+
+**Fix.** ADR-0013: don't use the API until it passes written gates. It then failed them: the gateway answers "Unknown Origin" to anything but BIAL's own site, so using it would mean spoofing the Origin header. The gates were robots, terms, no header spoofing,
+a PII-free field whitelist and two calls a day. We report the data leak to BIAL and make crowd and admin photo
+reports the primary BLR source, so nothing waits on a partner.
+
+**Lesson.** When a source fights you, map who owns and distributes the data before engineering around it.
+Decide the "is this allowed?" criteria *before* you see how convenient the data is. A clean JSON API is
+exactly when you're most tempted to rationalise.
+
+---
+
 ## #13: The daily scrape "failed" because Akamai refused GitHub's runner (2026-11-11)
 
 **Situation.** The first scheduled run saved 0 BLR prices and went red. The log said
