@@ -36,7 +36,7 @@ Three complications:
 | A | Keep scraping shopdutyfree.com politely (ADR-0011) | **Keep.** Legitimate. It works whenever the edge lets us in. |
 | B | Run the scraper from an IP Akamai doesn't block (self-hosted runner, home connection, proxy) | **Rejected.** We would be choosing an IP *because* the other one is blocked. That is evasion, whatever machine runs it (ADR-0011, option 2). |
 | C | Call BIAL's product API now | **Rejected for now.** Possible robots disallow, unread terms, no permission. |
-| D | Call BIAL's API only once it passes every gate below | **Chosen, gated.** The gates are written down in advance, so the call is a checklist rather than a judgment made under pressure. |
+| D | Call BIAL's API only once it passes every gate below | **Chosen, gated, then failed its gates** (see the gate check). Writing the gates down first turned the decision into a checklist rather than a judgment made under pressure. |
 | E | Make crowd photo reports the primary BLR source | **Chosen.** They're ours, cooperation-free, and already built (ADR-0006/0007/0008). |
 | F | Reuse other aggregators' prices (dutyfree.buzz etc.) | **Rejected.** That copies another company's database (ADR-0004, EU database right) and inherits their freshness problems. |
 | G | Admin-entered prices from our own trips or receipts | **Chosen as a seed.** Goes through the same review queue, labelled as admin entries. |
@@ -66,12 +66,29 @@ Three complications:
   depends on Avolta answering an email.
 - Good: the gates make the BIAL decision cheap to re-check and easy to explain. If gate 1 passes tomorrow,
   the adapter is small: one JSON call, no HTML parsing, and GTINs make cross-airport matching (ADR-0005) much stronger.
-- Bad: if gate 1 fails, which the evidence leans towards, BLR freshness depends on the Akamai edge and on
+- Bad: with the BIAL API ruled out (see the gate check below), BLR freshness depends on the Akamai edge and on
   how many travellers send photos. That could mean days-old prices at launch.
 - Bad: crowd data is sparse at first and skews towards popular bottles. Seeding it ourselves (option G) is manual work.
 
+## Gate check, 2026-11-13: the BIAL API fails
+Opening `https://gateway.bengaluruairport.com/robots.txt` in a normal browser returns only the text
+**"Unknown Origin"**. The gateway refuses any request whose `Origin` header isn't BIAL's own website,
+and it publishes no robots.txt at all.
+
+- **Gate 3 fails.** The only way to get data is to send `Origin: https://www.bengaluruairport.com`, which
+  pretends to be BIAL's own front end. That is the header spoofing gate 3 rules out. An origin check is
+  a deliberate "only our site may call this" control, even if a weak one, so working around it is bypassing a block (ADR-0011).
+- **Gate 1 can't be met** either: there's no robots.txt to grant us anything.
+
+**Result:** the BIAL API is off the table. Option D is now rejected unless BIAL gives **written permission**,
+for example by allow-listing our client. Crowd and admin photo reports are the primary BLR source,
+with the polite shopdutyfree scrape as a bonus when the edge lets us in. We still report the PII exposure to BIAL.
+
+**Why this is worth noticing:** CORS-style origin checks protect nothing on the server side, because any
+non-browser client can set the header. So "it's technically trivial" is true and beside the point.
+The check states the owner's intent, and intent is what ADR-0004 and ADR-0011 tell us to respect.
+
 ## Revisit when
 - BIAL replies, either granting permission or confirming the robots and terms position, or
-- gate 1 or 2 is checked by a person (record the result here), or
 - BLR is blocked for 7+ days in a row with fewer than ~20 approved crowd prices: then reconsider
   whether BLR stays in the MVP.

@@ -18,7 +18,7 @@ The airport's website lists the same catalogue. The browser's Network tab showed
 rather than scraped. The JSON was ideal, but it also returned staff names, phone numbers and emails on every
 product, and the API host's robots.txt appears to turn crawlers away.
 
-**Fix.** ADR-0013: don't use the API yet. Write down the gates it must pass (robots, terms, no header spoofing,
+**Fix.** ADR-0013: don't use the API until it passes written gates. It then failed them: the gateway answers "Unknown Origin" to anything but BIAL's own site, so using it would mean spoofing the Origin header. Write down the gates it must pass (robots, terms, no header spoofing,
 PII-free field whitelist, two calls a day), report the data leak to BIAL, and make crowd and admin photo
 reports the primary BLR source so nothing waits on a partner.
 
