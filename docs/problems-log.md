@@ -6,6 +6,45 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ---
 
+## #20: The function we "revoked from public" was callable by anyone (2026-11-13)
+
+**Situation.** Asked "if someone decompiles the APK, can they hack the backend?" The quick answer
+(the key is public by design, RLS is the boundary) is true but untested, so we audited it: pulled
+the live APK apart, and checked every table, policy, function and bucket as the API roles see them.
+
+**Investigation.** The APK held only the URL and the publishable key (the `sb_secret_` and
+`github_pat_` hits were supabase-js's guard and our own redaction regex). Every table had RLS. The
+interesting part was functions. `claim_issue_report`, which leases a problem report for the Edge
+Function, is `SECURITY DEFINER` (it bypasses RLS), and its migration said
+`revoke execute ... from public`. That reads like "only the service role can call it". It isn't:
+Supabase's default privileges grant EXECUTE on every new `public` function **directly** to `anon`
+and `authenticated`, and revoking from `PUBLIC` doesn't remove a direct grant. Recreating those
+grants in a scratch Postgres, `set role anon; select * from claim_issue_report(1)` returned another
+user's report and set it to `filing`. Looping over ids every 5 minutes would have burned every
+report's 5 attempts in ~25 minutes, silently stopping all problem reports from reaching GitHub.
+
+Why CI missed it: the SQL tests ran as the superuser (which ignores grants and RLS), and the test
+stubs had none of Supabase's grants. The test environment couldn't express the bug.
+
+The same pass found smaller gaps: a price report could carry forged reviewer fields, someone
+else's photo path, or a 2099 date (an approved price would then stay "latest" forever); and
+nothing rate-limited price reports or photo uploads, which took any file type up to 50 MiB.
+
+**Fix.** Migration `20261113030000_harden_data_api_access.sql`: revoke the function from `anon`
+and `authenticated`; a `BEFORE INSERT` trigger on price reports that resets server-owned fields,
+checks the photo folder and dates, and allows 30 reports/hour; bucket size and image-type limits;
+upload rate limits in the storage policies. The test stubs now recreate Supabase's grants, and
+`60_access_control.sql` runs as `anon`/`authenticated` with three guardrails: RLS on every table,
+an allowlist of `SECURITY DEFINER` functions the API roles may call, and `security_invoker` on
+every view. Run against the old migrations, it fails and names `claim_issue_report`.
+
+**Lesson.** "Revoke from public" is not "nobody else": privileges are additive, so check what was
+granted *directly*, and know your platform's default grants. More generally, a security test that
+runs as superuser proves nothing; test as the role the attacker gets. Writeup:
+[docs/security.md](security.md), decision: [ADR-0017](adr/0017-data-api-access-model.md).
+
+---
+
 ## #17: "Remind me when I'm at the airport" turned out to need the scariest permission (2026-11-13)
 
 **Situation.** In review, the obvious improvement came up: fire the reminder when the phone is
