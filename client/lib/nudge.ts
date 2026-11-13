@@ -156,22 +156,35 @@ export type ActiveNudge = {
   here: boolean;
 };
 
+/** Where the phone is, if it's at an airport: any airport, not only the trip's. */
+export type Here = { iata: string; tz: string | null };
+
 /**
- * Which in-app card to show now, if any. Unlike reminders this needs no permission and
- * works on web. `hereIata` is the trip airport the phone is at (≤ 5 km), if we know it
- * without asking: we only read location when permission was already granted.
+ * After this many "Not this time" taps on different days at an airport that isn't on the
+ * trip, stop offering it there: the traveller probably lives or works next to it.
  */
-export function activeNudge(stops: NudgeStop[], history: NudgeHistory, now: Date, hereIata?: string | null): ActiveNudge | null {
+export const NEARBY_DISMISS_LIMIT = 2;
+
+/** Distinct days the traveller closed the card at this airport. */
+function dismissedDays(history: NudgeHistory, iata: string): number {
+  return history.dismissed.filter((k) => k.startsWith(`${iata}:`)).length;
+}
+
+/**
+ * Which in-app card to show now, if any. Unlike reminders this needs no notification
+ * permission and works on web. `here` is the airport the phone is at (≤ 5 km), checked
+ * with while-in-use location each time the app opens (ADR-0014 §4).
+ */
+export function activeNudge(stops: NudgeStop[], history: NudgeHistory, now: Date, here?: Here | null): ActiveNudge | null {
   const open = (iata: string, date: LocalDate) =>
     !history.dismissed.includes(nudgeKey(iata, date)) && !snappedRecently(history, iata, now);
 
-  // Being at the airport beats any schedule: works even if no dates were entered.
-  if (hereIata) {
-    const stop = stops.find((s) => s.iata === hereIata);
-    if (stop) {
-      const date = localDateAt(now, stop.tz);
-      if (open(stop.iata, date)) return { iata: stop.iata, date, here: true };
-    }
+  // Being at an airport beats any schedule: works with no dates, and at airports not on the trip.
+  if (here) {
+    const onTrip = stops.some((s) => s.iata === here.iata);
+    const date = localDateAt(now, here.tz);
+    const nearbyResident = !onTrip && dismissedDays(history, here.iata) >= NEARBY_DISMISS_LIMIT;
+    if (!nearbyResident && open(here.iata, date)) return { iata: here.iata, date, here: true };
   }
   for (const stop of stops) {
     if (!isLocalDate(stop.date) || !open(stop.iata, stop.date)) continue;

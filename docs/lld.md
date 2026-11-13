@@ -208,7 +208,7 @@ offset(tz, at) = (the wall clock Intl shows for `at` in tz, read back as UTC) �
                                    │                         reconcileReminders() ▼ (native only)
                                    │                OS scheduled notifications (kind = travel-nudge)
                                    ▼
-             activeNudge(stops, history, now, hereIata) ──▶ <TravelDayCard/>  (all platforms)
+             activeNudge(stops, history, now, here)     ──▶ <TravelDayCard/>  (all platforms)
                                                                 │ tap
  tapped reminder ──onReminderOpened──▶ recordOpened ──┐         ▼
                                /report?airport=DXB&snap=1&via=nudge_card|nudge_notification
@@ -237,12 +237,18 @@ schedule the rest with `identifier = 'nudge:<IATA>:<date>'` and a `DATE` trigger
 `travel-day` Android channel. A stable identifier means re-running it can't double-book.
 
 **`TravelDayProvider`** (`lib/travelDay.tsx`) owns the state and side effects:
-- AsyncStorage keys `nudge.prefs.v1` (`remindersOn`) and `nudge.history.v1`; `trip.plans.v1` holds dates and times.
+- AsyncStorage keys `nudge.prefs.v1` (`remindersOn`, `locationAskDismissed`) and `nudge.history.v1`; `trip.plans.v1` holds dates and times.
 - Re-plans when the stops, the switch, permission, the hour, the snap count or the dismiss count change.
   It deliberately does *not* depend on the whole `history`: every reconcile writes history, so that
   would loop forever.
-- "Here" check: only if location permission is already granted; last-known position (≤ 10 min old)
-  or one low-accuracy fix; at most every 10 minutes; not on web.
+- "Here" check (`checkHere`), on mount and every foreground, at most every 2 minutes: read the
+  permission (never prompt) → last-known position ≤ 2 min old, or one balanced fix (web: always a
+  fix) → `nearestAirport` over **all** bundled airports → `here = {iata, tz}` if ≤ 5 km. The prompt
+  comes only from `<LocationAskCard/>` (`allowLocation()`), shown once while permission is undetermined.
+- `activeNudge(…, here)`: `here` wins over dates and can be any airport. The date is computed in
+  *that* airport's zone. A non-trip airport dismissed on ≥ 2 days is suppressed (`NEARBY_DISMISS_LIMIT`):
+  the traveller probably lives near it.
+- No background location and no geofence: ADR-0014 §4 explains why.
 
 **Report screen** reads `airport`, `snap`, `via`, `nudge` route params once per distinct set
 (`useRef` guard), pre-selects the airport, and calls `takePhoto(true)` on native. Browsers only

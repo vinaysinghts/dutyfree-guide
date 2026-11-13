@@ -3,7 +3,8 @@
  * reminders (lib/notifications.ts), the phone's location, and storage.
  *
  * Everything here stays on the device. The trip dates, the reminder history and the
- * "you're at DXB" check never go to our server (ADR-0014 §4).
+ * "you're at DXB" check never go to our server (ADR-0014 §4). Location is read only while
+ * the app is open; there is no background location and no geofence (ADR-0014 §4).
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
@@ -15,7 +16,7 @@ import { airportTimeZone, allAirports } from './airports';
 import { AT_AIRPORT_KM, nearestAirport } from './geo';
 import {
   EMPTY_HISTORY, activeNudge, planNudges, recordDismissed, recordOpened, recordScheduled, recordSnap, settle,
-  type ActiveNudge, type NudgeHistory, type NudgeStop,
+  type ActiveNudge, type Here, type NudgeHistory, type NudgeStop,
 } from './nudge';
 import {
   cancelAllReminders, configureReminders, onReminderOpened, reconcileReminders, reminderPermission,
@@ -25,9 +26,11 @@ import { useTrip } from './trip';
 
 const PREFS_KEY = 'nudge.prefs.v1';
 const HISTORY_KEY = 'nudge.history.v1';
-const HERE_CHECK_EVERY_MS = 10 * 60 * 1000;
+/** Re-check at most this often; short, because the moment that matters is "just walked in". */
+const HERE_CHECK_EVERY_MS = 2 * 60 * 1000;
 
-type Prefs = { remindersOn: boolean };
+type Prefs = { remindersOn: boolean; locationAskDismissed?: boolean };
+type Permission = 'granted' | 'denied' | 'undetermined';
 
 type TravelDayState = {
   /** The card to show now, if any. */
@@ -36,8 +39,14 @@ type TravelDayState = {
   remindersSupported: boolean;
   remindersOn: boolean;
   /** 'denied' means the OS setting is off; we can't ask again from inside the app. */
-  permission: 'granted' | 'denied' | 'undetermined';
+  permission: Permission;
   setRemindersOn: (on: boolean) => Promise<void>;
+  /** While-in-use location, used to notice "you're at an airport" when the app opens. */
+  locationPermission: Permission;
+  /** Show the one-time "let us notice airports" ask? */
+  showLocationAsk: boolean;
+  allowLocation: () => Promise<void>;
+  declineLocationAsk: () => void;
   dismiss: (iata: string, date: string) => void;
   /** Call after a price report is sent, so we don't ask at that airport again soon. */
   snapped: (iata: string) => void;
@@ -51,8 +60,9 @@ export function TravelDayProvider({ children }: { children: ReactNode }) {
   const [history, setHistory] = useState<NudgeHistory>(EMPTY_HISTORY);
   const [loaded, setLoaded] = useState(false);
   const [now, setNow] = useState(() => new Date());
-  const [hereIata, setHereIata] = useState<string | null>(null);
-  const [permission, setPermission] = useState<TravelDayState['permission']>('undetermined');
+  const [here, setHere] = useState<Here | null>(null);
+  const [permission, setPermission] = useState<Permission>('undetermined');
+  const [locationPermission, setLocationPermission] = useState<Permission>('undetermined');
   const lastHereCheck = useRef(0);
 
   const stops = useMemo<NudgeStop[]>(
@@ -78,25 +88,25 @@ export function TravelDayProvider({ children }: { children: ReactNode }) {
     if (loaded) AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history)).catch(() => {});
   }, [history, loaded]);
 
-  // Is the phone at one of the trip's airports? Only if location was already allowed
-  // (for snapping a tag): we never ask for location just to show this card.
-  const checkHere = useCallback(async () => {
-    if (Platform.OS === 'web' || stops.length === 0) return;
-    if (Date.now() - lastHereCheck.current < HERE_CHECK_EVERY_MS) return;
+  // Is the phone at an airport, any airport? Checked each time the app opens or comes back
+  // to the front, with while-in-use location only: never in the background (ADR-0014 §4).
+  // We read the permission here but never prompt: the prompt comes from the explainer card.
+  const checkHere = useCallback(async (force = false) => {
+    if (!force && Date.now() - lastHereCheck.current < HERE_CHECK_EVERY_MS) return;
     lastHereCheck.current = Date.now();
     try {
       const perm = await Location.getForegroundPermissionsAsync();
-      if (!perm.granted) return;
-      const pos =
-        (await Location.getLastKnownPositionAsync({ maxAge: HERE_CHECK_EVERY_MS })) ??
-        (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low }));
-      const tripIatas = new Set(stops.map((s) => s.iata));
-      const hit = nearestAirport(pos.coords, allAirports().filter((a) => tripIatas.has(a.iata)));
-      setHereIata(hit && hit.km <= AT_AIRPORT_KM ? hit.airport.iata : null);
+      setLocationPermission(perm.granted ? 'granted' : perm.canAskAgain ? 'undetermined' : 'denied');
+      if (!perm.granted) return setHere(null);
+      const last = Platform.OS === 'web' ? null : await Location.getLastKnownPositionAsync({ maxAge: HERE_CHECK_EVERY_MS });
+      const pos = last ?? (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
+      // ~3,200 airports, one haversine each: well under a millisecond's worth of work per check.
+      const hit = nearestAirport(pos.coords, allAirports());
+      setHere(hit && hit.km <= AT_AIRPORT_KM ? { iata: hit.airport.iata, tz: airportTimeZone(hit.airport.iata) } : null);
     } catch {
       // Location is a bonus; the date-based card still works.
     }
-  }, [stops]);
+  }, []);
 
   // Tick the clock and re-check on foreground: cards open and close with time.
   useEffect(() => {
@@ -154,16 +164,27 @@ export function TravelDayProvider({ children }: { children: ReactNode }) {
     setPrefs((p) => ({ ...p, remindersOn: on }));
   }, []);
 
+  const allowLocation = useCallback(async () => {
+    const perm = await Location.requestForegroundPermissionsAsync().catch(() => null);
+    setPrefs((p) => ({ ...p, locationAskDismissed: true }));
+    if (perm?.granted) await checkHere(true);
+    else setLocationPermission(perm?.canAskAgain === false ? 'denied' : 'undetermined');
+  }, [checkHere]);
+
   const value = useMemo<TravelDayState>(() => ({
-    active: activeNudge(stops, history, now, hereIata),
+    active: activeNudge(stops, history, now, here),
     stops,
     remindersSupported,
     remindersOn: prefs.remindersOn,
     permission,
     setRemindersOn,
+    locationPermission,
+    showLocationAsk: loaded && locationPermission === 'undetermined' && !prefs.locationAskDismissed,
+    allowLocation,
+    declineLocationAsk: () => setPrefs((p) => ({ ...p, locationAskDismissed: true })),
     dismiss: (iata, date) => setHistory((h) => recordDismissed(h, iata, date)),
     snapped: (iata) => setHistory((h) => recordSnap(h, iata, new Date())),
-  }), [stops, history, now, hereIata, prefs.remindersOn, permission, setRemindersOn]);
+  }), [stops, history, now, here, loaded, prefs, permission, setRemindersOn, locationPermission, allowLocation]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

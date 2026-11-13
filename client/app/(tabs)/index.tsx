@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet } from 'react-native';
 
 import { AirportSearch } from '@/components/AirportSearch';
+import { LocationAskCard } from '@/components/LocationAskCard';
 import { RemindersSwitch } from '@/components/RemindersSwitch';
 import { StopPlanEditor } from '@/components/StopPlanEditor';
 import { Text, View } from '@/components/Themed';
@@ -17,6 +18,7 @@ export default function TripScreen() {
   return (
     <ScrollView contentContainerStyle={styles.content}>
       <TravelDayCard />
+      <LocationAskCard />
       <Text style={styles.title}>Where are you flying?</Text>
       <Muted>Add each airport you'll pass through, including layovers. The order doesn't matter, and a return trip uses the same airports.</Muted>
       {isDemoMode ? (

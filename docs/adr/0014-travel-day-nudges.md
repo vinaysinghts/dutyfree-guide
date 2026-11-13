@@ -22,7 +22,7 @@ layovers work, what we do with location, and how we avoid nagging.
 | A. **Server push** (Expo push / FCM / APNs, a cron decides who to ping) | ❌ needs data at that moment | push tokens table, cron, retries, token cleanup | ✅ must upload trips and dates | Web Push needs a service worker |
 | B. **Local notifications** scheduled on the phone | ✅ the OS fires it offline | none | ❌ stays on the phone | ❌ |
 | C. **In-app card only** | ✅ | none | ❌ | ✅ |
-| D. **Geofence** ("entered DXB" wakes the app) | ✅ | none | ❌ | ❌ |
+| D. **Geofence** ("entered DXB" wakes the app) | ✅ | none | ❌ | ❌ (and needs "Always" location, §4) |
 
 **Decision: B + C.**
 - **Local reminders** on iOS and Android (expo-notifications, `DATE` trigger). The phone already
@@ -31,8 +31,8 @@ layovers work, what we do with location, and how we avoid nagging.
   until they find airport Wi-Fi, so a push sent at the right moment is often delivered late.
 - **An in-app card** on the trip and prices screens, everywhere including web. It needs no
   permission and catches people who turned reminders off or never turned them on.
-- **Not D.** Geofencing needs "Always" background location. That is a scary prompt, App Store
-  review pushes back on it for a feature like this, and it drains battery for a nice-to-have.
+- **Not D.** Geofencing needs "Always" background location. §4 covers it in full, because review
+  raised it: we get most of its value by checking location whenever the app opens.
 - **Revisit A** if we add accounts and want server-side targeting, for example "BLR's whisky
   prices are 30 days old: ask the next five people flying through BLR." That is the point where
   the server knows something the phone doesn't.
@@ -47,7 +47,7 @@ departure time:
 |---|---|---|
 | Date + departure time at that airport | 75 minutes before departure (airport time) | 4 h before to 1 h after departure |
 | Date only | 08:00 airport time on that date | All of that date, airport time |
-| Nothing | No reminder | Only if the phone is at a trip airport (§4) |
+| Nothing | No reminder | Whenever the app is opened at any airport (§4) |
 
 Why 75 minutes: international boarding starts 45–60 minutes before departure, and security takes
 15–45. At about T−75 the traveller is most likely walking past the shop. This is a guess, so it's a
@@ -85,24 +85,55 @@ phone switches zone on landing. **Layovers** are just more stops with their own 
 → AMS trip that crosses midnight has DXB on the 21st, even though you left BLR on the 20th. The
 form says "(DXB time)" to make that clear.
 
-## 4. Location and privacy
+## 4. Location: "you're at an airport" on app open, while-in-use only
 
-- **We never ask for location to show a nudge.** If the traveller already allowed location (to
-  verify a photo, ADR-0008), then while the app is open we read a coarse, last-known position at
-  most every 10 minutes. If it's within 5 km of a trip airport, the card says "📍 You're at DXB".
-  That works even with no dates entered. Without permission, the date-based card still works.
-- **Nothing about the nudge leaves the phone**: not the dates, not the reminder history, not the
-  "you're here" check. The only new server data is `price_submissions.via`
-  (`manual` / `nudge_card` / `nudge_notification`). It's an entry point, not a trip.
-- **Notification permission is asked only when the traveller flips "Remind me on travel day"**,
-  not at launch. A cold prompt gets denied, and on iOS you only get one prompt. If it's denied,
-  the switch links to Settings.
-- The location permission text was updated to say we also use location while the app is open to
-  notice a trip airport. ADR-0008's "once, when you snap" wording is now out of date. When we
-  change how we use a permission, the text has to change with it.
+**Question raised in review (2026-11-13):** shouldn't the reminder fire when the phone is
+*actually at* the airport, rather than at a time we guess? That's the most accurate signal we
+could have, so we worked through what it costs.
+
+**Option G: geofence with "Always" location (rejected).** The OS watches a ~3 km circle around
+each trip airport and wakes the app on entry, which then schedules "snap a shelf" for 30 minutes
+later (past security).
+
+| Concern | What it means here |
+|---|---|
+| Permission | Needs "Allow all the time". Android 11+ doesn't even show it as a dialog: we'd have to send people to Settings. iOS asks for "While using" first, then shows a separate "Change to Always" prompt later. Many people refuse, and the ones who don't may trust us less. |
+| Store review | Declaring `ACCESS_BACKGROUND_LOCATION` puts the app through Google Play's background-location review (a form plus a video), and the use has to be "core functionality". A reminder to photograph prices is unlikely to pass. The permission would sit in the manifest for *every* user, opt-in or not. Apple scrutinises "Always" the same way. |
+| Platform limits | iOS monitors at most 20 regions per app (fine for a trip). Android geofence alerts can arrive minutes late, and the OS removes them after a reboot unless we re-register. |
+| Battery | Low: OS geofencing uses cell and Wi-Fi, not GPS. Not the deciding factor. |
+| Accuracy | A 3 km circle catches the kerb, the arrivals hall, nearby hotels and staff. Arrival is usually landside, an hour before the shop. |
+| Complexity | A background task with no UI; two writers (background task + app) sharing the reminder history, which needs merging; testing on real devices only. |
+
+**Decision: while-in-use location, checked whenever the app opens or comes back to the front.**
+- On every open or foreground (at most every 2 minutes) we read the position: last known if it's
+  fresh, otherwise one balanced fix. We then find the nearest of all ~3,200 airports. If it's within
+  5 km (ADR-0008's `AT_AIRPORT_KM`), the card says **"📍 You're at DXB"**, with one tap to the
+  camera. This counts **any airport, not only the trip's**: a traveller who never set up a trip
+  still gets asked, and so does someone on an unplanned layover.
+- **The time-based reminder (§2) is what gets people to open the app.** The reminder brings them in,
+  and the location check then confirms where they are. Together they get most of the geofence's
+  value with no background access.
+- **How we ask:** a one-time explainer card on My trip ("Notice when I'm at an airport?") shows the
+  OS prompt only if they tap Allow. A cold prompt gets refused, and on iOS we only get one. Snapping a
+  tag still asks too (ADR-0008). Without permission, the date-based card still works.
+- **People who live near an airport:** after "Not this time" on two different days at an airport
+  that isn't on their trip, we stop offering it there (`NEARBY_DISMISS_LIMIT`). Their trip airports
+  are always offered.
+- **Nothing about this leaves the phone**: not the dates, not the reminder history, not the "you're
+  here" check. The only new server data is `price_submissions.via` (`manual` / `nudge_card` /
+  `nudge_notification`). It's an entry point, not a trip.
+- **Notification permission** is asked only when the traveller turns on "Remind me on travel day".
+  If it's denied, the switch links to Settings.
+- **The permission text was rewritten**: "While the app is open, we use your location to notice
+  when you're at an airport and to confirm where a price-tag photo was taken. Never in the
+  background." When we change how we use a permission, the text has to change with it. ADR-0008's
+  "once, when you snap" no longer holds.
 - The lock screen shows "At Dubai (DXB) duty free?". Someone looking at your phone learns you're
-  travelling. That's acceptable for an opt-in reminder, but it's why we don't put prices or
-  amounts in it.
+  travelling. That's acceptable for an opt-in reminder, and it's why the reminder never includes
+  prices.
+
+**Revisit G** only if the data (§6) shows people open the app at airports a lot less than the
+reminders predict, *and* we're willing to go through Play's background-location review.
 
 ## 5. Notification fatigue
 

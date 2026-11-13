@@ -87,11 +87,17 @@ reminders should exist, within the fatigue limits. A reconcile step makes the OS
 notifications match. Tapping the reminder, or the in-app card, opens the camera with the airport
 chosen, and the normal crowd write path takes over, tagged `via = nudge_*`. No server, no push
 tokens, and the trip never leaves the phone, so the reminder fires even with roaming off.
+Whenever the app opens, a while-in-use location check also spots *any* airport within 5 km and
+shows "📍 You're at DXB". The reminder gets people to open the app, and location confirms where
+they are. We chose this over a background geofence ("Always" location, store review), ADR-0014 §4.
 Full reasoning: [ADR-0014](adr/0014-travel-day-nudges.md).
 
 ```
-trip + dates ─▶ planNudges ─▶ reconcile ─▶ OS alarm ─(T−75 min)─▶ "At DXB duty free?" ─tap─▶ camera
-             └▶ activeNudge (+ "you're here" if location already allowed) ─▶ in-app card ─tap─┘
+trip + dates ─▶ planNudges ─▶ reconcile ─▶ OS alarm (T−75 min) ─▶ "At DXB duty free?" ─tap─┐
+                                                                                            ▼
+app opens ─▶ location (while in use) ─▶ nearest airport ≤ 5 km ─▶ activeNudge ─▶ card ─tap─▶ camera
+             (no permission: dates only)                                          │
+                                                       report tagged via=nudge_* ◀┘
 ```
 
 **Problem reports (app → GitHub issue).** Tap the bug icon → the app screenshots the current
@@ -126,7 +132,7 @@ App ──(1) upload screenshots──▶ Storage: issue-screenshots (private)
 | [0011](adr/0011-blocked-is-not-disallowed.md) | A bot-wall 401/403/429 means "blocked": stop, warn, keep the last prices; no retries or IP changes | Stays polite to sites that push back vs. prices can go stale while blocked |
 | [0012](adr/0012-display-currency.md) | *Proposed:* user-picked display currency, converted on the device from the INR pivot; shelf price always shown | No API change vs. estimates differ from card rates |
 | [0013](adr/0013-blr-data-without-avolta.md) | Without Avolta: polite scrape + crowd/admin reports; BIAL's product API only after written gates (robots, terms, no spoofing, PII-free whitelist) | Nothing depends on a partner reply vs. BLR freshness rests on the edge and crowd volume |
-| [0014](adr/0014-travel-day-nudges.md) | Travel-day nudges as on-device local reminders + in-app card; airport-local times via bundled IANA zones; strict fatigue limits | Offline, private and serverless vs. no server-side targeting and phone-app-only reminders |
+| [0014](adr/0014-travel-day-nudges.md) | Travel-day nudges as on-device local reminders + in-app card; "you're at an airport" from while-in-use location on app open, not a background geofence; airport-local times via bundled IANA zones; strict fatigue limits | Offline, private and serverless vs. no server-side targeting and phone-app-only reminders |
 
 ## 5. Scaling and failure thinking
 

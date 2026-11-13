@@ -6,6 +6,34 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ---
 
+## #17: "Remind me when I'm at the airport" turned out to need the scariest permission (2026-11-13)
+
+**Situation.** In review, the obvious improvement came up: fire the reminder when the phone is
+*at* the airport, not at a time we guessed from the flight. It's more accurate, and it works with
+no dates entered.
+
+**Investigation.** To wake an app that isn't running when you enter a place, you need an OS
+geofence, and that needs "Allow all the time" location. Tracing it through: Android 11+ won't even
+show that as a dialog (we'd have to send people to Settings). Declaring the permission puts the
+app through Google Play's background-location review, which requires the use to be "core
+functionality", and it would apply to every install, not only those who opt in. A 3 km circle also
+fires at the kerb, an hour before the traveller reaches the shop. I had started building it (a
+background task, plus merging the reminder history from two writers) before the trade-off was
+clear. The product owner then made the call: *don't ask for Always; check location whenever the
+app is opened.*
+
+**Fix.** While-in-use location on every open or foreground, matched against **all** ~3,200
+airports. If one is within 5 km, show "📍 You're at DXB". The time-based reminder is what gets the
+app opened, and location confirms where they are. A one-time explainer card asks for permission.
+Someone who lives next to an airport stops seeing it after two "Not this time" taps on different
+days. The half-built geofence code was thrown away, not merged "for later".
+
+**Lesson.** List the permission and store-review costs *before* the code: the platform's
+permission model can rule out an idea that is technically easy. And the cheaper design kept most
+of the value: the reminder gets people to open the app, and a while-in-use check covers the rest.
+
+---
+
 ## #16: The reminder history could forget it had already asked (2026-11-13)
 
 **Situation.** Travel-day reminders keep a small history on the phone: what was scheduled, and

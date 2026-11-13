@@ -12,8 +12,9 @@ and see every liquor price at those airports' duty-free shops, converted to INR,
   snap the shelf tag. The tag is read on the device (OCR), the photo's location is checked against
   the airport, and a reviewer approves it before it appears.
 - **Travel-day nudge**: give each airport an optional date (and flight time), and on that day the
-  app offers a one-tap shelf snap, plus an opt-in reminder about 75 minutes before you fly. It all
-  stays on your phone ([ADR-0014](docs/adr/0014-travel-day-nudges.md)).
+  app offers a one-tap shelf snap, plus an opt-in reminder about 75 minutes before you fly. Open
+  the app at any airport and it notices (location only while the app is open). It all stays on
+  your phone ([ADR-0014](docs/adr/0014-travel-day-nudges.md)).
 - **Currency**: everything is converted to INR with daily ECB rates (Frankfurter).
 - **Stack**: Expo (React Native) for web/iOS/Android · Supabase (Postgres, Auth, Storage) · Python scrapers on GitHub Actions.
 

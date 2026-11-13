@@ -121,9 +121,29 @@ test('in-app card: around the flight time, even across midnight', () => {
   assert.equal(activeNudge(stops, EMPTY_HISTORY, new Date('2026-11-20T19:00:00Z'))?.iata, 'DXB');
 });
 
-test('in-app card: being at a trip airport works with no dates at all', () => {
-  assert.deepEqual(activeNudge([BLR, DXB], EMPTY_HISTORY, NOW, 'DXB'), { iata: 'DXB', date: '2026-11-15', here: true });
-  assert.equal(activeNudge([BLR], EMPTY_HISTORY, NOW, 'DXB'), null);
+const AT_DXB = { iata: 'DXB', tz: 'Asia/Dubai' };
+
+test('in-app card: being at an airport works with no dates at all', () => {
+  assert.deepEqual(activeNudge([BLR, DXB], EMPTY_HISTORY, NOW, AT_DXB), { iata: 'DXB', date: '2026-11-15', here: true });
+});
+
+test('in-app card: any airport counts, not only the trip ones', () => {
+  assert.deepEqual(activeNudge([BLR], EMPTY_HISTORY, NOW, AT_DXB), { iata: 'DXB', date: '2026-11-15', here: true });
+  assert.deepEqual(activeNudge([], EMPTY_HISTORY, NOW, AT_DXB)?.iata, 'DXB');
+});
+
+test('in-app card: the date at the airport is local to it', () => {
+  // 21:00Z on the 15th is already the 16th in Dubai.
+  assert.equal(activeNudge([], EMPTY_HISTORY, new Date('2026-11-15T21:00:00Z'), AT_DXB)?.date, '2026-11-16');
+});
+
+test('in-app card: someone who lives next to an airport stops seeing it after two dismissals', () => {
+  let h = recordDismissed(EMPTY_HISTORY, 'DXB', '2026-11-13');
+  assert.equal(activeNudge([], h, NOW, AT_DXB)?.iata, 'DXB');
+  h = recordDismissed(h, 'DXB', '2026-11-14');
+  assert.equal(activeNudge([], h, NOW, AT_DXB), null);
+  // ...unless it's on their trip: then they're really flying from it.
+  assert.equal(activeNudge([DXB], h, NOW, AT_DXB)?.iata, 'DXB');
 });
 
 test('in-app card: closed or already reported means gone', () => {
