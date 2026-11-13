@@ -6,6 +6,48 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ---
 
+## #18: "Why can't it fetch prices from AMS, BSL, DXB?" Nothing was failing (2026-11-13)
+
+**Situation.** The first two reports from the in-app reporter (issues #23, #24) came from a trip
+AMS → BLR → BSL → DXB: *"Why is it not able to fetch prices from bdx, bsl, ams"*. Only BLR had
+prices. ("bdx" read like Bordeaux's code, BOD, but the trip in the report's context table showed
+it was DXB. The attached context saved a wrong guess.)
+
+**Investigation.** "Not able to fetch" sounds like a scraper bug, so I checked the source of
+truth for *what we try to fetch*, the `retailers` table, before looking at any logs:
+- **AMS** has a retailer, but `active = false`: we paused it ourselves when Schiphol started
+  answering every request with a Cloudflare challenge (problems log #9, ADR-0011).
+- **BSL and DXB** have **no retailer row at all**. No scraper has ever existed for them.
+- **BLR** is the only live source.
+
+So there was no fetch to fail. The real bug was in the app: one banner, *"No prices collected yet
+for AMS, BSL, DXB"*, for three different situations. "Yet" promised prices that were never coming,
+and it didn't say what the traveller could do. The database knew the difference between "paused"
+and "never built". Nothing exposed it to the app.
+
+**Fix.** Made coverage a first-class state (ADR-0015):
+1. `airport_coverage` view: per airport, `live` / `paused` / `none`, the pause reason, when the
+   scraper last saved a price, and how many traveller prices exist.
+2. `retailers.paused_reason`: whoever pauses a scraper writes, in traveller-facing words, why.
+3. `lib/coverage.ts` (pure, 8 tests): one label for the trip list ("Shop prices, updated daily" /
+   "Traveller prices only") and one sentence for the prices screen, e.g. *"Schiphol's shop blocks
+   automated price checks, and we don't get around that. AMS prices come from travellers'
+   shelf-tag photos. None reported yet: yours would be the first."* Plus a **stale** state: a live
+   scraper with nothing newer than 3 days gets "may be out of date", so the BLR Akamai case
+   (problems log #13) can't silently pass as current either.
+4. "Snap a shelf tag at AMS" opens Report a price with the airport already chosen.
+
+I deliberately did **not** write BSL and DXB scrapers in this fix. It's what the report literally
+asks for, but it would fix two airports out of ~3,200, and the next traveller through FRA or IST
+would file the same issue. Those are separate, demand-led pieces of work (ADR-0015 "Revisit when").
+
+**Lesson.** When a user says "it can't fetch X", check what the system *intends* to fetch before
+debugging *how* it fetches. And an empty state is a feature: "no data" for different reasons needs
+different words, because each reason leads to a different action. Here the most useful fix was
+making the app say what we already knew.
+
+---
+
 ## #17: "Remind me when I'm at the airport" turned out to need the scariest permission (2026-11-13)
 
 **Situation.** In review, the obvious improvement came up: fire the reminder when the phone is

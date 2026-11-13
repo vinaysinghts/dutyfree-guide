@@ -4,6 +4,7 @@
  */
 import { searchAirportList } from './airportSearch';
 import { allAirports } from './airports';
+import type { AirportCoverage } from './coverage';
 import { DEMO_PRICES } from './demo';
 import { ensureSession, supabase } from './supabase';
 import { nearestAirport, type GeoPoint } from './geo';
@@ -31,6 +32,35 @@ export async function pricesAt(iatas: string[]): Promise<PriceRow[]> {
     price: Number(r.price),
     price_inr: r.price_inr == null ? null : Number(r.price_inr),
   }));
+}
+
+/**
+ * Where each airport's prices come from (live scraper, paused one, or travellers only).
+ * Airports with no retailer row come back missing; lib/coverage.ts reads that as
+ * "travellers only". ADR-0015.
+ */
+export async function coverageAt(iatas: string[]): Promise<AirportCoverage[]> {
+  if (iatas.length === 0) return [];
+  if (!supabase) return demoCoverage(iatas);
+  const { data, error } = await supabase.from('airport_coverage').select('*').in('airport_iata', iatas);
+  if (error) throw error;
+  return (data as AirportCoverage[]).map((r) => ({ ...r, crowd_products: Number(r.crowd_products) }));
+}
+
+/** Demo mode: an airport with any sample shop price counts as live, as of now. */
+function demoCoverage(iatas: string[]): AirportCoverage[] {
+  return iatas.map((iata) => {
+    const rows = DEMO_PRICES.filter((r) => r.airport_iata === iata);
+    const crowd = rows.filter((r) => r.source === 'crowd');
+    return {
+      airport_iata: iata,
+      scraper: rows.some((r) => r.source === 'scraped') ? 'live' : 'none',
+      paused_reason: null,
+      last_scraped_at: rows.some((r) => r.source === 'scraped') ? new Date().toISOString() : null,
+      crowd_products: new Set(crowd.map((r) => r.product_id)).size,
+      last_reported_at: crowd[0]?.observed_at ?? null,
+    };
+  });
 }
 
 /** Closest airports to where the user is standing, nearest first. */

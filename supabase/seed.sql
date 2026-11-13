@@ -16,9 +16,10 @@ on conflict (iata) do nothing;
 
 -- Schiphol starts inactive: its site answers every automated request with a
 -- Cloudflare challenge, and we don't bypass bot checks (problems log #9, ADR-0004).
-insert into public.retailers (airport_iata, name, adapter, base_url, currency, zone, active) values
-  ('BLR', 'BLR Duty Free (shopdutyfree.com)', 'shopdutyfree', 'https://bengaluru.shopdutyfree.com', 'INR', 'both', true),
-  ('AMS', 'Schiphol Airport Shopping', 'schiphol', 'https://www.schiphol.nl', 'EUR', 'departure', false)
+insert into public.retailers (airport_iata, name, adapter, base_url, currency, zone, active, paused_reason) values
+  ('BLR', 'BLR Duty Free (shopdutyfree.com)', 'shopdutyfree', 'https://bengaluru.shopdutyfree.com', 'INR', 'both', true, null),
+  ('AMS', 'Schiphol Airport Shopping', 'schiphol', 'https://www.schiphol.nl', 'EUR', 'departure', false,
+   'Schiphol''s shop blocks automated price checks, and we don''t get around that.')
 on conflict (airport_iata, name) do nothing;
 
 insert into public.fx_rates (currency, rate_to_inr, as_of) values
