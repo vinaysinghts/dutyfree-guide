@@ -58,8 +58,9 @@ customs-allowance warnings, a display currency other than INR (planned:
                          ┌──────────────────────────────────────────┴───────┐
                          │ Python scrapers (GitHub Actions cron, daily)     │
                          │  adapters: shopdutyfree (BLR + other Avolta      │
-                         │  airports), schiphol (AMS) ── polite HTTP ──▶ retailer sites
-                         │  fx: Frankfurter (ECB rates) ──────────────▶ api.frankfurter.dev
+                         │  airports), schiphol (AMS), dubaidutyfree (DXB,  │
+                         │  dark) ── polite HTTP ──────────────▶ retailer sites
+                         │  fx: Frankfurter (ECB rates; AED/QAR from USD peg) ▶ api.frankfurter.dev
                          └──────────────────────────────────────────────────┘
 ```
 
@@ -133,6 +134,7 @@ App ──(1) upload screenshots──▶ Storage: issue-screenshots (private)
 | [0012](adr/0012-display-currency.md) | *Proposed:* user-picked display currency, converted on the device from the INR pivot; shelf price always shown | No API change vs. estimates differ from card rates |
 | [0013](adr/0013-blr-data-without-avolta.md) | Without Avolta: polite scrape + crowd/admin reports; BIAL's product API only after written gates (robots, terms, no spoofing, PII-free whitelist) | Nothing depends on a partner reply vs. BLR freshness rests on the edge and crowd volume |
 | [0014](adr/0014-travel-day-nudges.md) | Travel-day nudges as on-device local reminders + in-app card; "you're at an airport" from while-in-use location on app open, not a background geofence; airport-local times via bundled IANA zones; strict fatigue limits | Offline, private and serverless vs. no server-side targeting and phone-app-only reminders |
+| [0016](adr/0016-dxb-dubai-duty-free-adapter.md) | DXB adapter merged dark; switched on by a `retailers` row only after robots, terms, no-bot-wall and dry-run gates; AED from the USD peg | No unreviewed scraping vs. DXB stays traveller-only until a person checks the live-check log |
 
 ## 5. Scaling and failure thinking
 

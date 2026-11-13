@@ -29,3 +29,10 @@ The adapters were written without access to the live sites. For each retailer:
   `retailers` with that `adapter`, `base_url` and `currency`. No code needed.
 - New platform: subclass `Adapter` in `dutyfree_scrapers/adapters/`, register it in
   `adapters/__init__.py`, and add a fixture test.
+
+## Adapter status
+| Adapter | Airport | Status |
+|---|---|---|
+| `shopdutyfree` | BLR | Live (ADR-0011: stops when Akamai blocks a runner) |
+| `schiphol` | AMS | Paused: Cloudflare challenge on every request |
+| `dubaidutyfree` | DXB | **Dark**: no `retailers` row until the ADR-0016 gates pass on the live check |

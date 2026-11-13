@@ -293,10 +293,16 @@ POST {"sweep": true}     Authorization: Bearer <SYNC_TOKEN>
 dutyfree-scrape run                        # all active retailers → Supabase, then FX
 dutyfree-scrape run --dry-run --adapter shopdutyfree --base-url https://bengaluru.shopdutyfree.com
 dutyfree-scrape parse page.html --adapter schiphol   # test a saved page offline
+dutyfree-scrape probe --adapter dubaidutyfree --base-url https://www.dubaidutyfree.com  # live check, stores nothing
 dutyfree-scrape airports                   # load OurAirports into Supabase
 ```
 Exit code 1 if any retailer saved 0 prices, so the scheduled run goes red and notifies us.
 
 **Adding a retailer:** if it's on an existing platform, insert a `retailers` row with that adapter
 and base URL; no code. A new platform means a new `Adapter` subclass with `category_urls`,
-`parse_listing_html` and `next_page_url`, plus a fixture-based test.
+`parse_listing_html` and `next_page_url`, plus a fixture-based test. New adapters land **dark**: the
+code merges, but the `retailers` row that switches it on waits for the live-check gates (ADR-0016).
+
+**FX:** rates are INR per unit from Frankfurter (ECB). Currencies the ECB doesn't publish but that are
+pegged (AED 3.6725/USD, QAR 3.64/USD) are derived from USD in `fx.PEGGED`; anything else unknown is
+logged and skipped, so one missing rate can't fail the run.
