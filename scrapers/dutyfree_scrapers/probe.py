@@ -22,6 +22,9 @@ from .fetch import PoliteClient, RobotsDisallowed, SiteBlocked
 from .jsonld import products_from_jsonld
 
 
+# Terms, legal and API-access pages: a person has to read these before an adapter is
+# switched on (ADR-0004), and the probe is often the only thing that can reach the site.
+POLICY_LINK_RE = re.compile(r"terms|conditions|legal|privacy|policy|disclaimer|api|developer|affiliate|partner", re.I)
 LIQUOR_LINK_RE = re.compile(r"whisk|spirit|liquor|liqueur|wine|vodka|gin\b|rum\b|cognac|brandy|tequila|champagne", re.I)
 CARD_PROBES = ["li.product-item", ".product-item", "[data-product-id]", ".product-item-info", ".product-tile", ".product-card"]
 APP_STATE_MARKERS = ["__NEXT_DATA__", "__NUXT__", "window.__INITIAL_STATE__", "application/ld+json", "data-product", "ng-version"]
@@ -32,11 +35,14 @@ def diagnose(html: str, base_url: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
     classes = Counter(c for tag in soup.find_all(class_=True) for c in tag.get("class", []) if "product" in c.lower())
     links = {}
+    policy = {}
     for a in soup.find_all("a", href=True):
         text = a.get_text(" ", strip=True)[:60]
         href = a["href"]
         if LIQUOR_LINK_RE.search(href) or LIQUOR_LINK_RE.search(text):
             links.setdefault(href, text)
+        if POLICY_LINK_RE.search(href) or POLICY_LINK_RE.search(text):
+            policy.setdefault(href, text)
     card_counts = {sel: len(soup.select(sel)) for sel in CARD_PROBES}
     first_card = next((soup.select_one(sel) for sel in CARD_PROBES if soup.select_one(sel)), None)
     pager = soup.select_one(".pages, .pagination, .toolbar-products, nav[aria-label*=agination]")
@@ -53,6 +59,7 @@ def diagnose(html: str, base_url: str) -> dict:
         "markers": [m for m in APP_STATE_MARKERS if m in html],
         "product_classes": classes.most_common(12),
         "liquor_links": list(links.items())[:40],
+        "policy_links": list(policy.items())[:15],
         "text_start": soup.get_text(" ", strip=True)[:300],
     }
 
@@ -100,6 +107,7 @@ def probe(adapter, client: PoliteClient, save_dir: Path, sample: int = 3, home: 
             if not products:
                 d = diagnose(html, adapter.base_url)
                 d.pop("liquor_links", None)
+                d.pop("policy_links", None)
                 row.update(d)
         report.append(row)
         print(json.dumps(row, ensure_ascii=False), flush=True)

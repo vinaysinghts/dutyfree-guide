@@ -6,6 +6,44 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ---
 
+## #19: Adding Dubai turned up three problems, and none was in the scraper (2026-11-13)
+
+**Situation.** DXB was the next airport to get shop prices (ADR-0016). The plan looked routine:
+copy the BLR adapter pattern, point it at `dubaidutyfree.com`, convert AED to INR.
+
+**Investigation.** Three separate things were in the way:
+
+1. **We couldn't read the site from where the code is written.** The sandbox's proxy refuses the host,
+   and a robots-respecting page fetcher got a client error on `/robots.txt` and the terms page. So
+   robots.txt, the terms and the markup were all unread. ADR-0004 says a person reads robots.txt and the
+   terms *before* we scrape, so "write it and see" was off the table.
+2. **AED has no ECB rate.** Our FX comes from Frankfurter, which republishes the European Central Bank's
+   ~30 reference currencies. The Gulf currencies aren't among them. `cli.py` already asked for `AED` on
+   every run, so the first real scrape would have asked for a rate that doesn't exist. Traveller photos from
+   DXB are priced in AED, so those prices had no INR value either. (We couldn't call Frankfurter from the
+   sandbox to see whether it errors or just omits AED; either way the rate is missing.)
+3. **The "daily" scrape has never run.** All four scheduled runs of *Daily price scrape* are `skipped`:
+   the job is gated on the `SCRAPE_ENABLED` repository variable, which isn't `true`. And scheduled
+   workflows always run from the default branch, which is `feat/mvp` (older than `main`). So "Shop prices,
+   updated daily" for DXB would have been false even with a perfect adapter.
+
+**Fix.**
+- AED and QAR are pegged to the US dollar by their central banks (3.6725 and 3.64), so `fx.py` fetches USD
+  and derives them, and never asks the ECB for a currency it doesn't publish. Unknown currencies are logged
+  and skipped rather than failing the run. Tests use `httpx.MockTransport`, so they run offline.
+- The adapter is built **dark**: merged and tested, but no `retailers` row, so the app keeps telling the truth
+  ("Traveller prices only"). The Scraper live check now probes DXB from GitHub's runners and prints
+  robots.txt, the home page's liquor links and its terms/policy links (`policy_links`, new). A person reads
+  those, and ADR-0016 lists the gates that must pass before a one-line migration switches DXB on.
+- The scheduling problem is flagged to the owner, not changed here: it needs repository settings
+  (`SCRAPE_ENABLED=true`, and the default branch set to `main`), which code can't fix.
+
+**Lesson.** "Add a source" has three layers: *may* we read it, *can* we interpret it (currency, units),
+and *does* the pipeline actually run. Check each before claiming freshness to users. And a pegged
+currency is a fact you can encode, not a rate you need to fetch.
+
+---
+
 ## #17: "Remind me when I'm at the airport" turned out to need the scariest permission (2026-11-13)
 
 **Situation.** In review, the obvious improvement came up: fire the reminder when the phone is

@@ -20,6 +20,8 @@ jobs:
         include:
           - { airport: BLR, adapter: shopdutyfree, base_url: "https://bengaluru.shopdutyfree.com" }
           - { airport: AMS, adapter: schiphol, base_url: "https://www.schiphol.nl" }
+          # Unverified (ADR-0016): this run is how we read robots.txt, the terms link and the real category URLs.
+          - { airport: DXB, adapter: dubaidutyfree, base_url: "https://www.dubaidutyfree.com" }
     defaults: { run: { working-directory: scrapers } }
     steps:
       - uses: actions/checkout@v4
