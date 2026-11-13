@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { buildIssue, issueTitle, neutralize, reportMarker, type IssueReportRow } from './issue.ts';
+import { buildIssue, isSetupError, issueTitle, neutralize, reportMarker, type IssueReportRow } from './issue.ts';
 
 const report: IssueReportRow = {
   id: 7,
@@ -55,4 +55,12 @@ test('neutralize: no @mentions and no HTML comment tricks', () => {
 
 test('labels: wrong price maps to its own label', () => {
   assert.deepEqual(buildIssue({ ...report, category: 'wrong_price' }, []).labels, ['from-app', 'wrong price']);
+});
+
+test('isSetupError: token/permission problems are ours, not the report\'s', () => {
+  assert.ok(isSetupError(401));
+  assert.ok(isSetupError(403)); // e.g. "Resource not accessible by personal access token"
+  assert.ok(isSetupError(404)); // token can't see the repo
+  assert.ok(!isSetupError(500));
+  assert.ok(!isSetupError(502));
 });

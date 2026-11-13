@@ -82,7 +82,7 @@ writes a `prices` row with `source = 'crowd'`.
 **Problem reports (app → GitHub issue).** Tap the bug icon → the app screenshots the current
 screen → the user adds a note → screenshots go to a private bucket and an `issue_reports` row is
 inserted (the outbox) → the app calls the `file-issue` Edge Function, which holds the GitHub token,
-leases the row, and opens the issue with signed screenshot links. An hourly GitHub Action sweeps
+leases the row, and opens the issue with signed screenshot links. A scheduled GitHub Action (hourly, though GitHub may run it only every few hours) sweeps
 anything that didn't get filed. Full reasoning: [ADR-0010](adr/0010-in-app-issue-reporting.md).
 
 ```
@@ -124,7 +124,8 @@ App ──(1) upload screenshots──▶ Storage: issue-screenshots (private)
   approved; length/range CHECK constraints reject garbage at the database.
 
 - **GitHub down or rate-limited** when a user reports a problem → the report is already saved;
-  the user is told it will be posted within the hour, and the sweep job files it.
+  the user is told it will be posted shortly, and the sweep job files it. A bad or
+  under-scoped token is a setup error: it fails the deploy and doesn't use up reports' retries.
 
 ## 6. What a staff engineer would watch next
 

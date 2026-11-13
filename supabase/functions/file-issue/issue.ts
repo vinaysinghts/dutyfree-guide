@@ -127,3 +127,12 @@ export function buildIssue(report: IssueReportRow, screenshotUrls: string[]): Gi
     labels: ['from-app', CATEGORY_LABEL[report.category]],
   };
 }
+
+/**
+ * GitHub statuses that mean our setup is wrong (bad, expired or under-scoped
+ * token, wrong repo), not that this report is bad. Retrying the report won't
+ * help, so these must not use up its retry budget.
+ */
+export function isSetupError(status: number): boolean {
+  return status === 401 || status === 403 || status === 404;
+}
