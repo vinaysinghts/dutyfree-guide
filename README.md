@@ -59,7 +59,9 @@ The hosted project is `pkywwbvqpwomvbldgbyw` (its URL is in `.github/workflows/s
    **only this repository** and **Issues: Read and write** (nothing else), and save it as the repo
    secret `ISSUES_GITHUB_TOKEN`. Then run **Supabase deploy** again: it deploys the `file-issue`
    function and hands it the token. Until then, reports from the app's bug icon are saved in
-   `issue_reports` and filed by the hourly **Sync app problem reports** job once the token exists.
+   `issue_reports` and filed by the next deploy or **Sync app problem reports** run once the token works. If the deploy
+   fails at "File waiting problem reports", GitHub rejected the token: check it has this repository
+   selected and Issues: Read and write.
 
 For local development, copy `client/.env.example` to `client/.env` and fill in the URL and the
 publishable key.

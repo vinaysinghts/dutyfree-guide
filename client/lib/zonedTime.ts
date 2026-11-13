@@ -5,7 +5,7 @@
  * phone is still set to India time. A reminder is an exact instant, so we must read
  * 09:40 in Dubai's zone, not the phone's. JavaScript has no "make a Date in zone X"
  * API, only "show this Date in zone X" (Intl.DateTimeFormat), so we invert that.
- * See LLD §3.9 and problems log #14.
+ * See LLD §3.9 and problems log #15.
  */
 
 export type LocalDate = string; // YYYY-MM-DD, the calendar date at the airport

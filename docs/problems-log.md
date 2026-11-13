@@ -6,7 +6,7 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ---
 
-## #15: The reminder history could forget it had already asked (2026-11-13)
+## #16: The reminder history could forget it had already asked (2026-11-13)
 
 **Situation.** Travel-day reminders keep a small history on the phone: what was scheduled, and
 whether each one was opened or ignored. Two rules depend on it: "one reminder per airport per
@@ -34,7 +34,7 @@ no waiting for a real notification.
 
 ---
 
-## #14: "09:40 at Dubai" while the phone is on India time (2026-11-13)
+## #15: "09:40 at Dubai" while the phone is on India time (2026-11-13)
 
 **Situation.** Travel-day reminders need an exact instant: "75 minutes before your DXB flight".
 People type their flight in local airport time, usually days before, at home. JavaScript's `Date`
@@ -72,6 +72,28 @@ APK: set a DXB time from India and look at the scheduled time.
 **Lesson.** Store human time as the human said it (local date, local time, *and where*), and convert
 at the edge where you need an instant. A UTC timestamp throws away the "where", and you need the
 "where" again the moment you show it back to the traveller.
+
+---
+
+## #14: The partner wouldn't answer, so we found who else had the data (2026-11-13)
+
+**Situation.** BLR's shop (shopdutyfree.com, run by Avolta) intermittently blocks our scraper, and
+the email asking Avolta for a feed went nowhere. No affiliate programme covers India.
+
+**Investigation.** We stopped treating it as a technical problem and asked who else legitimately has
+this data, and why. The public record showed BLR duty free is a 50:50 joint venture of Avolta and BIAL, the airport.
+The airport's website lists the same catalogue. The browser's Network tab showed it loads from BIAL's own product API, and
+`merchantId: "dufry"` plus Avolta's SAP numbers proved the catalogue is synced into BIAL's platform
+rather than scraped. The JSON was ideal, but it also returned staff names, phone numbers and emails on every
+product, and the API host's robots.txt appears to turn crawlers away.
+
+**Fix.** ADR-0013: don't use the API until it passes written gates. It then failed them: the gateway answers "Unknown Origin" to anything but BIAL's own site, so using it would mean spoofing the Origin header. The gates were robots, terms, no header spoofing,
+a PII-free field whitelist and two calls a day. We report the data leak to BIAL and make crowd and admin photo
+reports the primary BLR source, so nothing waits on a partner.
+
+**Lesson.** When a source fights you, map who owns and distributes the data before engineering around it.
+Decide the "is this allowed?" criteria *before* you see how convenient the data is. A clean JSON API is
+exactly when you're most tempted to rationalise.
 
 ---
 
@@ -137,6 +159,39 @@ and include PostgREST's error body in the exception so the next 500 is diagnosab
 **Lesson.** Upserts need unique keys *within the batch*, not just against the table. And an
 error without its body costs a full re-run (here, 10 minutes of polite crawling) to diagnose:
 always log what the server said.
+
+---
+
+## #11: Problem reports never reached GitHub, and the retry budget hid why (2026-11-13)
+
+**Situation.** A report sent from a phone never turned into a GitHub issue, even after the
+`ISSUES_GITHUB_TOKEN` secret was added. The app had said "saved", and every sync run was green.
+
+**Investigation.** We read the sync job's output (it prints the function's JSON) run by run:
+1. 2026-11-10/11: `"status":"pending","reason":"GitHub filing is not configured yet"`. Expected:
+   the secret wasn't set at deploy time, and only a deploy copies it to the function.
+2. 2026-11-11 18:41, after a deploy with the token: `GitHub 403: Resource not accessible by personal
+   access token`. The token existed but couldn't create issues on this repo (a fine-grained token
+   needs this repository selected **and** Issues: Read and write).
+3. From then on: `{"checked":0}`. The reports had used up their 5 attempts on the 403 and dropped
+   out of the sweep. The job stayed green because there was nothing left to try.
+
+Also visible: the "hourly" schedule actually ran every 4 to 8 hours (GitHub delays scheduled
+workflows on quiet repos), so "posted within the hour" in the app was wrong too.
+
+**Fix.**
+- The function now tells **setup errors** (GitHub 401/403/404: our token or repo is wrong) from
+  **report errors**. A setup error gives the attempt back and leaves the report `pending`, so it files
+  as soon as the token is fixed. Only other failures count towards the 5-attempt limit.
+- A one-off migration resets reports that burned their attempts on those errors.
+- The deploy workflow now sweeps right after setting the secrets and **fails loudly** if GitHub
+  rejects the token, so a bad token shows up the moment it's configured instead of days later.
+- The app says "shortly" instead of "within the hour".
+
+**Lesson.** A retry budget is for transient failures. Spending it on a configuration error turns a
+loud, fixable problem into silent data loss. Classify errors before retrying (who is at fault:
+us, the input, or the network?), and check configuration where it's set (fail the deploy), not
+where it's first used. Also, "green" only means something if the job fails when work is stuck.
 
 ---
 

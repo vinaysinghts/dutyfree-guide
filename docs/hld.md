@@ -97,7 +97,7 @@ trip + dates ─▶ planNudges ─▶ reconcile ─▶ OS alarm ─(T−75 min)�
 **Problem reports (app → GitHub issue).** Tap the bug icon → the app screenshots the current
 screen → the user adds a note → screenshots go to a private bucket and an `issue_reports` row is
 inserted (the outbox) → the app calls the `file-issue` Edge Function, which holds the GitHub token,
-leases the row, and opens the issue with signed screenshot links. An hourly GitHub Action sweeps
+leases the row, and opens the issue with signed screenshot links. A scheduled GitHub Action (hourly, though GitHub may run it only every few hours) sweeps
 anything that didn't get filed. Full reasoning: [ADR-0010](adr/0010-in-app-issue-reporting.md).
 
 ```
@@ -125,6 +125,7 @@ App ──(1) upload screenshots──▶ Storage: issue-screenshots (private)
 | [0010](adr/0010-in-app-issue-reporting.md) | Problem reports become GitHub issues via an Edge Function, outbox + hourly sweep | Token never in the app, nothing lost vs. at-least-once (rare duplicate issue) and public screenshots |
 | [0011](adr/0011-blocked-is-not-disallowed.md) | A bot-wall 401/403/429 means "blocked": stop, warn, keep the last prices; no retries or IP changes | Stays polite to sites that push back vs. prices can go stale while blocked |
 | [0012](adr/0012-display-currency.md) | *Proposed:* user-picked display currency, converted on the device from the INR pivot; shelf price always shown | No API change vs. estimates differ from card rates |
+| [0013](adr/0013-blr-data-without-avolta.md) | Without Avolta: polite scrape + crowd/admin reports; BIAL's product API only after written gates (robots, terms, no spoofing, PII-free whitelist) | Nothing depends on a partner reply vs. BLR freshness rests on the edge and crowd volume |
 | [0014](adr/0014-travel-day-nudges.md) | Travel-day nudges as on-device local reminders + in-app card; airport-local times via bundled IANA zones; strict fatigue limits | Offline, private and serverless vs. no server-side targeting and phone-app-only reminders |
 
 ## 5. Scaling and failure thinking
@@ -140,7 +141,8 @@ App ──(1) upload screenshots──▶ Storage: issue-screenshots (private)
   approved; length/range CHECK constraints reject garbage at the database.
 
 - **GitHub down or rate-limited** when a user reports a problem → the report is already saved;
-  the user is told it will be posted within the hour, and the sweep job files it.
+  the user is told it will be posted shortly, and the sweep job files it. A bad or
+  under-scoped token is a setup error: it fails the deploy and doesn't use up reports' retries.
 
 ## 6. What a staff engineer would watch next
 

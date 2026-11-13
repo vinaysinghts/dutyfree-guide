@@ -71,6 +71,21 @@ jobs:
             echo "::warning::ISSUES_GITHUB_TOKEN is not set: problem reports are saved but not posted to GitHub yet."
           fi
 
+      # File any reports that were waiting (e.g. for the token) right away,
+      # instead of waiting for the next scheduled sync, which GitHub can delay
+      # by hours. Prints the result so a bad token shows up here, in the deploy.
+      - name: File waiting problem reports
+        if: env.ISSUES_GITHUB_TOKEN != ''
+        run: |
+          sleep 10 # let the new secrets reach the function
+          curl -sS -X POST "$SUPABASE_URL/functions/v1/file-issue" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" -H 'Content-Type: application/json' \
+            -d '{"sweep":true}' | tee result.json; echo
+          if grep -q 'GitHub 40[134]' result.json; then
+            echo "::error::GitHub rejected ISSUES_GITHUB_TOKEN. It needs access to this repository with Issues: Read and write."
+            exit 1
+          fi
+
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install -e scrapers

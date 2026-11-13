@@ -147,7 +147,7 @@ earns its keep. If not, the first knob is the timing constant, then the copy.
   are the obvious next steps.
 - 👎 We can't target airports that need data most (stale BLR prices) without a server (§1, option A).
 - 👎 `Intl` time-zone support on Hermes has to be confirmed on a real device. If it's missing, we
-  fall back to the phone's zone (problems log #14).
+  fall back to the phone's zone (problems log #15).
 
 - Rollout order: the APK build and the Supabase migration both run on merge, and either can
   finish first. A new app on an old database would send a `via` column that doesn't exist yet, so

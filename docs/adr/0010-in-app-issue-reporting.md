@@ -70,3 +70,10 @@ Constraints:
 ## Revisit when
 - We add crash reporting (Sentry etc.): consider moving feedback to the same tool (option C).
 - Reports start containing personal data, or volume makes GitHub noisy.
+
+## Update 2026-11-13 (problems log #11)
+- GitHub 401/403/404 are **setup errors** (our token or repo), not report errors: they don't use up
+  a report's attempts, and the report stays `pending` until the token works.
+- The deploy workflow sweeps right after setting secrets and fails if GitHub rejects the token.
+- GitHub runs the "hourly" schedule every few hours on a quiet repo, so the sweep is a slow safety
+  net, not a promise. The app now says "shortly".
