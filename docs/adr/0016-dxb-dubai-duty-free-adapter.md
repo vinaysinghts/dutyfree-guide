@@ -109,8 +109,10 @@ server-rendered data (SEO pages often do even when the home page is a shell).
 
 ### Run 2, 2026-11-13
 
-- **Sitemap:** `sitemap.xml` answered `200` but contained no `<loc>` entries, so it lists no product or
-  category URLs. (The probe now prints its size and first bytes, to tell an empty file from an unusual format.)
+- **Sitemap:** `sitemap.xml` answered `200`, and the probe counted 0 URLs. **That was our bug, not an
+  empty sitemap.** Run 3 printed the first bytes: it's a sitemap index (`staticSitemap.xml`,
+  `categorySitemap…`, 899 bytes) whose `<loc>` values are wrapped in `<![CDATA[…]]>`, which our regex didn't
+  allow. Fixed and tested. Run 4 lists the real category and product URLs.
 - **Platform:** the shell loads `/file/v…/storeJS/26.10/main.js`, `store-libs.js` and `cc-ko-oj-extensions.js`
   (Knockout + Oracle JET). That file layout is characteristic of **Oracle Commerce Cloud** (an inference from file
   names, not confirmed). Its storefront renders products in the browser from Oracle's documented
@@ -118,7 +120,7 @@ server-rendered data (SEO pages often do even when the home page is a shell).
 - **No HTML route to prices.** Oracle Commerce serves pre-rendered pages only to recognised search-engine
   crawlers. Getting those by claiming to be Googlebot is spoofing, which gate 3 rules out.
 
-**Where that leaves DXB.** Gates 1 and 3 pass. Gate 4, as written (prices in HTML), fails. The only
+**Where that leaves DXB.** Gates 1 and 3 pass. Gate 4, as written (prices in HTML), looks likely to fail, though run 4 will show whether category pages from the sitemap carry any server-rendered data. The only
 remaining route is the shop's own storefront API. That is the same kind of question ADR-0013 faced with BIAL, with
 two differences in our favour: the API is the platform vendor's *documented* public storefront API, and
 robots.txt does not exclude it. Whether to use it is an owner decision, and gate 2 (terms, read by a person) has to pass

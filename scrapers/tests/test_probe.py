@@ -74,3 +74,10 @@ def test_diagnose_spots_a_javascript_app_shell():
 
     d = diagnose('<html><body><div id="root"></div><script src="/static/main.abc.js"></script></body></html>', "https://x")
     assert d["scripts"] == ["/static/main.abc.js"] and d["app_roots"] == ["div#root"]
+
+
+def test_sitemap_locs_wrapped_in_cdata_are_read():
+    from dutyfree_scrapers.probe import SITEMAP_LOC_RE
+
+    xml = "<sitemapindex><sitemap><loc><![CDATA[https://x/categorySitemap.xml]]></loc></sitemap></sitemapindex>"
+    assert SITEMAP_LOC_RE.findall(xml) == ["https://x/categorySitemap.xml"]

@@ -38,6 +38,12 @@ copy the BLR adapter pattern, point it at `dubaidutyfree.com`, convert AED to IN
 - The scheduling problem is flagged to the owner, not changed here: it needs repository settings
   (`SCRAPE_ENABLED=true`, and the default branch set to `main`), which code can't fix.
 
+**A self-inflicted false negative.** The second live check reported the sitemap as empty, and I nearly wrote
+"DXB has no sitemap URLs" into the ADR. Printing the first 300 bytes showed a normal sitemap index
+with every `<loc>` wrapped in `<![CDATA[…]]>`, which our regex didn't match. A "0 results" from a
+probe is a claim about the probe as much as about the site, so always print enough raw input to
+tell the two apart.
+
 **Lesson.** "Add a source" has three layers: *may* we read it, *can* we interpret it (currency, units),
 and *does* the pipeline actually run. Check each before claiming freshness to users. And a pegged
 currency is a fact you can encode, not a rate you need to fetch.

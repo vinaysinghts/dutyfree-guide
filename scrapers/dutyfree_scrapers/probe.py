@@ -69,7 +69,8 @@ def diagnose(html: str, base_url: str) -> dict:
     }
 
 
-SITEMAP_LOC_RE = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>", re.I)
+# Some platforms wrap each URL in CDATA: <loc><![CDATA[https://…]]></loc> (DXB, problems log #19).
+SITEMAP_LOC_RE = re.compile(r"<loc>\s*(?:<!\[CDATA\[)?\s*([^<\s\]]+)\s*(?:\]\]>)?\s*</loc>", re.I)
 
 
 def sitemap_summary(client, url: str, max_children: int = 3) -> dict:
