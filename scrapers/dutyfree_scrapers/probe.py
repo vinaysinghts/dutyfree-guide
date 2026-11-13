@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 import httpx
 from bs4 import BeautifulSoup
 
-from .fetch import PoliteClient, RobotsDisallowed
+from .fetch import PoliteClient, RobotsDisallowed, SiteBlocked
 from .jsonld import products_from_jsonld
 
 
@@ -82,6 +82,8 @@ def probe(adapter, client: PoliteClient, save_dir: Path, sample: int = 3, home: 
             html = client.get(url)
         except RobotsDisallowed:
             row["outcome"] = "robots.txt disallows"
+        except SiteBlocked as e:
+            row["outcome"] = f"blocked: {e}"
         except httpx.HTTPStatusError as e:
             row.update(_error_details(e))
             _save(save_dir, url, e.response.text)
@@ -105,6 +107,8 @@ def probe(adapter, client: PoliteClient, save_dir: Path, sample: int = 3, home: 
 
 
 def _error_details(e: Exception) -> dict:
+    if isinstance(e, SiteBlocked):
+        return {"outcome": f"blocked: {e}"}
     if isinstance(e, RobotsDisallowed):
         return {"outcome": "robots.txt disallows"}
     if isinstance(e, httpx.HTTPStatusError):

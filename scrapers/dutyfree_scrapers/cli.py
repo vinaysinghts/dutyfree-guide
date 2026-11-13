@@ -11,14 +11,21 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
 from .adapters import ADAPTERS
-from .fetch import PoliteClient
+from .fetch import PoliteClient, SiteBlocked
 from .fx import rates_to_inr
 
 log = logging.getLogger("dutyfree_scrapers")
+
+
+def _annotate(level: str, title: str, message: str) -> None:
+    """Show a message on the GitHub Actions run summary, not just deep in the log."""
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print(f"::{level} title={title}::{message}", flush=True)
 
 
 def _make_adapter(slug: str, base_url: str, currency: str | None):
@@ -45,6 +52,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
         store = SupabaseStore()
         failures = 0
+        blocked = 0
         currencies = set()
         for retailer in store.retailers():
             if args.adapter and retailer["adapter"] != args.adapter:
@@ -53,6 +61,15 @@ def cmd_run(args: argparse.Namespace) -> int:
             adapter = _make_adapter(retailer["adapter"], retailer["base_url"], retailer["currency"])
             try:
                 products = list(adapter.crawl(client))
+            except SiteBlocked as e:
+                # Not our bug and not fixable from here: warn, keep the last good prices.
+                msg = (f"{retailer['name']}: blocked by the site, {e}. Skipped; the app keeps "
+                       "the last prices we saved. We don't retry or work around blocks (ADR-0011).")
+                log.warning(msg)
+                _annotate("warning", f"{retailer['name']} blocked", msg)
+                blocked += 1
+                continue
+            try:
                 saved = store.save_prices(retailer["id"], products)
                 log.info("%s: saved %d prices", retailer["name"], saved)
                 if saved == 0:
@@ -62,6 +79,8 @@ def cmd_run(args: argparse.Namespace) -> int:
                 failures += 1
         as_of, rates = rates_to_inr(sorted(currencies | {"EUR", "USD", "GBP", "AED"}))
         store.save_fx(as_of, rates)
+        # A block is an outside condition, reported as a warning; red means our code broke.
+        log.info("done: %d retailer(s) failed, %d blocked by the site", failures, blocked)
         return 1 if failures else 0
     finally:
         client.close()
