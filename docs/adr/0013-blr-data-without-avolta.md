@@ -1,4 +1,4 @@
-# ADR-0012: Sourcing BLR prices without Avolta's cooperation
+# ADR-0013: Sourcing BLR prices without Avolta's cooperation
 
 **Status:** accepted, 2026-11-13. Builds on [ADR-0004](0004-scraping-policy.md) and
 [ADR-0011](0011-blocked-is-not-disallowed.md). *Not legal advice.*
