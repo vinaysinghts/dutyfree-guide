@@ -85,4 +85,24 @@ everything that doesn't depend on those unknowns and make the unknowns cheap to 
 - traveller photos for DXB pass ~20 approved bottles, which lowers the value of a scraper.
 
 ## Gate check
-*Pending: filled in from the Scraper live check run on this PR.*
+
+### Run 1, 2026-11-13 (live check on PR #27, GitHub runner)
+
+| Gate | Result | Evidence |
+|---|---|---|
+| 1. robots.txt allows us | **Pass** | `200`. `User-agent: *` disallows only cart, checkout, profile, searchresults, confirmation and wishlist pages (each with an `/en/` twin). No crawl-delay, so our 5 s default applies. It names `Sitemap: https://www.dubaidutyfree.com/sitemap.xml`. |
+| 2. Terms don't forbid it | **Open** | The home page had no links in its HTML at all (see gate 4), so the probe found no terms link. A person still has to read the terms in a browser. |
+| 3. No bot wall for our own user agent | **Pass, for this run** | robots.txt and the home page returned `200` to `DutyFreeGuideBot` with no cookies or browser headers. No Cloudflare, Akamai or DataDome fingerprints. |
+| 4. Prices in HTML or JSON-LD | **At risk** | The home page is a 22 KB **JavaScript app shell**: empty `<title>`, no text, no JSON-LD, no links. Products are rendered in the browser from an API. |
+| 5. Dry run returns bottles | **Fail (expected)** | All three guessed category paths (`/liquor`, `/liquor/whisky`, `/liquor/spirits`) were `404`. |
+
+**What this means.** The politeness questions look good: robots.txt welcomes crawlers outside the
+account pages, and nothing blocked us. The open question is *shape*: if product pages are only
+rendered by JavaScript, reading them means calling the shop's own front-end API, which is the
+ADR-0013 situation. That API would then need its own check: is it under a path robots.txt allows,
+and does it answer plain requests without origin, token or cookie tricks?
+
+**Next probe (run 2).** The sitemap is something the site publishes for crawlers, so the probe now reads it
+(index plus at most three product or category sitemaps) and prints liquor URLs. It also prints the shell's
+script bundles and root element. That tells us the real URL scheme, and whether product pages carry
+server-rendered data (SEO pages often do even when the home page is a shell).
