@@ -86,7 +86,7 @@ export default function ReportIssueScreen() {
           </>
         ) : (
           <Muted style={styles.center}>
-            Your report is saved (#{result.reportId}) and will be posted to our issue tracker within the hour.
+            Your report is saved (#{result.reportId}) and will be posted to our issue tracker shortly.
           </Muted>
         )}
         <Button title="Done" onPress={() => router.back()} />
