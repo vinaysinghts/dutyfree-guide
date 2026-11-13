@@ -133,6 +133,7 @@ App ──(1) upload screenshots──▶ Storage: issue-screenshots (private)
 | [0012](adr/0012-display-currency.md) | *Proposed:* user-picked display currency, converted on the device from the INR pivot; shelf price always shown | No API change vs. estimates differ from card rates |
 | [0013](adr/0013-blr-data-without-avolta.md) | Without Avolta: polite scrape + crowd/admin reports; BIAL's product API only after written gates (robots, terms, no spoofing, PII-free whitelist) | Nothing depends on a partner reply vs. BLR freshness rests on the edge and crowd volume |
 | [0014](adr/0014-travel-day-nudges.md) | Travel-day nudges as on-device local reminders + in-app card; "you're at an airport" from while-in-use location on app open, not a background geofence; airport-local times via bundled IANA zones; strict fatigue limits | Offline, private and serverless vs. no server-side targeting and phone-app-only reminders |
+| [0017](adr/0017-data-api-access-model.md) | The database is the security boundary: RLS on every table, server-owned fields set by triggers, `SECURITY DEFINER` functions revoked from API roles unless allowlisted, all tested as `anon`/`authenticated` in CI ([security.md](security.md)) | No API server to run vs. rules live in SQL and tests must mimic Supabase's grants |
 
 ## 5. Scaling and failure thinking
 
@@ -144,7 +145,9 @@ App ──(1) upload screenshots──▶ Storage: issue-screenshots (private)
 - **FX API down** → yesterday's rates stay in `fx_rates`; a missing currency shows "No INR rate yet"
   and sorts last instead of being wrongly ranked.
 - **Abuse of crowd reports** → RLS limits inserts to the user's own rows; nothing is public until
-  approved; length/range CHECK constraints reject garbage at the database.
+  approved; length/range CHECK constraints reject garbage at the database; a trigger resets
+  server-owned fields and allows 30 reports/hour per user; buckets cap size, type and uploads/hour.
+  Full threat model: [security.md](security.md).
 
 - **GitHub down or rate-limited** when a user reports a problem → the report is already saved;
   the user is told it will be posted shortly, and the sweep job files it. A bad or

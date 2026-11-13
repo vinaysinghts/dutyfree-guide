@@ -44,6 +44,8 @@ export async function nearestAirports(point: GeoPoint, limit = 3): Promise<(Airp
   return data as (AirportWithCoords & { distance_km: number })[];
 }
 
+const TOO_MANY_REPORTS = 'You have sent a lot of price reports in the last hour. Please try again later.';
+
 export async function submitPrice(input: SubmissionInput): Promise<void> {
   if (!supabase) throw new Error('Price reports need the backend. Set EXPO_PUBLIC_SUPABASE_URL to enable them.');
   const userId = await ensureSession();
@@ -54,7 +56,12 @@ export async function submitPrice(input: SubmissionInput): Promise<void> {
     const { error } = await supabase.storage
       .from('submission-photos')
       .upload(photo_path, blob, { contentType: blob.type || 'image/jpeg' });
-    if (error) throw error;
+    // The bucket refuses files over 15 MB or that aren't images, and the upload
+    // policy allows 30 photos an hour (migration 20261113030000).
+    if (error) {
+      if (/row-level security/i.test(error.message)) throw new Error(TOO_MANY_REPORTS);
+      throw error;
+    }
   }
   const row = {
     submitted_by: userId,
@@ -82,6 +89,7 @@ export async function submitPrice(input: SubmissionInput): Promise<void> {
     const { via: _via, ...withoutVia } = row;
     ({ error } = await supabase.from('price_submissions').insert(withoutVia));
   }
+  if (error?.code === 'P0429') throw new Error(TOO_MANY_REPORTS);
   if (error) throw error;
 }
 
