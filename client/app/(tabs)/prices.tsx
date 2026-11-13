@@ -1,4 +1,4 @@
-import { Link } from 'expo-router';
+import { Link, router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Linking, Pressable, RefreshControl, StyleSheet } from 'react-native';
 
@@ -10,6 +10,8 @@ import { rankProducts } from '@/lib/compare';
 import { formatInr, formatMoney, formatVolume } from '@/lib/format';
 import { useTrip } from '@/lib/trip';
 import type { PriceRow, RankedProduct } from '@/lib/types';
+import { useCoverage } from '@/lib/useCoverage';
+import type { CoverageNote } from '@/lib/coverage';
 
 export default function PricesScreen() {
   const c = useColors();
@@ -47,6 +49,9 @@ export default function PricesScreen() {
     return m;
   }, [rows]);
   const noData = iatas.filter((i) => !updatedAt.has(i));
+  // Why an airport has no (or old) prices, and what would fix it (ADR-0015, issues #23/#24).
+  const coverage = useCoverage(iatas);
+  const explained = coverage.filter((n) => n.kind !== 'live');
   const freshness = iatas
     .filter((i) => updatedAt.has(i))
     .map((i) => `${i} ${new Date(updatedAt.get(i)!).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`)
@@ -74,10 +79,10 @@ export default function PricesScreen() {
           <Text style={styles.title}>Prices at {iatas.join(', ')}</Text>
           <Muted>Every airport's price for each bottle, in INR at today's rates. Cheapest bottles first.</Muted>
           {freshness ? <Muted>Prices updated: {freshness}</Muted> : null}
-          {noData.length && !loading ? (
-            <Muted style={{ color: c.warn }}>
-              No prices collected yet for {noData.join(', ')}. You can add one with Report a price.
-            </Muted>
+          {explained.map((n) => <CoverageRow key={n.iata} note={n} />)}
+          {coverage.length === 0 && noData.length && !loading ? (
+            // Coverage didn't load: fall back to the plain fact, without promising when prices arrive.
+            <Muted style={{ color: c.warn }}>No prices yet for {noData.join(', ')}. You can add one with Report a price.</Muted>
           ) : null}
           <Input value={query} onChangeText={setQuery} placeholder="Filter, e.g. Johnnie Walker or gin" />
           {iatas.length > 1 ? (
@@ -94,6 +99,24 @@ export default function PricesScreen() {
       }
       renderItem={({ item }) => <ProductCard product={item} />}
     />
+  );
+}
+
+/** "AMS · Traveller prices only" with the reason, and a one-tap photo report for that airport. */
+function CoverageRow({ note }: { note: CoverageNote }) {
+  const c = useColors();
+  return (
+    <View style={[styles.coverage, { borderColor: c.border }]}>
+      <Text style={{ fontWeight: '600' }}>
+        {note.iata} · <Text style={{ color: c.warn, fontWeight: '600' }}>{note.label}</Text>
+      </Text>
+      <Muted>{note.detail}</Muted>
+      {note.askForPhoto ? (
+        <Pressable accessibilityRole="button" onPress={() => router.push(`/report?airport=${note.iata}`)} hitSlop={6}>
+          <Text style={{ color: c.tint, fontWeight: '600' }}>Snap a shelf tag at {note.iata}</Text>
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
@@ -152,4 +175,5 @@ const styles = StyleSheet.create({
   name: { fontSize: 16, fontWeight: '600' },
   offer: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 8, borderRadius: 8, borderWidth: StyleSheet.hairlineWidth },
   airport: { fontWeight: '700', width: 40 },
+  coverage: { gap: 2, padding: 10, borderRadius: 8, borderWidth: StyleSheet.hairlineWidth, backgroundColor: 'transparent' },
 });
