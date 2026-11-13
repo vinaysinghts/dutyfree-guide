@@ -86,6 +86,9 @@ def sitemap_summary(client, url: str, max_children: int = 3) -> dict:
         out.update(_error_details(e))
         return out
     locs = SITEMAP_LOC_RE.findall(xml)
+    # An empty or non-XML sitemap shows up here instead of as a silent "0 URLs".
+    out["bytes"] = len(xml)
+    out["head"] = re.sub(r"\s+", " ", xml[:300])
     children = [u for u in locs if u.lower().endswith((".xml", ".xml.gz")) or "sitemap" in u.lower()]
     out["children"] = children[:25]
     pages = [u for u in locs if u not in children]
