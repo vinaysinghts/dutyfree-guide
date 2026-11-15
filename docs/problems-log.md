@@ -6,6 +6,43 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ---
 
+## #21: "Free app, maybe commercial later" turned out to be commercial already (2026-11-15)
+
+**Situation.** The product owner asked for Reddit-based rankings: "what do people recommend buying
+at BLR duty free?", plus any prices mentioned in threads. Reddit has an official API, so it
+looked like a quick job: register, search, count.
+
+**Investigation.** Lesson #19 says to read the terms before sending any request, so we did. Two
+things got in the way.
+1. *The binding terms wouldn't load.* `redditinc.com` (the Data API Terms, Developer Terms and
+   Responsible Builder Policy) is blocked from our build environment. The tempting workaround
+   was to read an archived copy. That is the same move as switching IPs to get past a bot wall
+   (ADR-0011): getting round a block. The environment's guard refused it too. So we read what
+   *was* reachable, Reddit's own help-centre FAQ, and marked everything else as unverified.
+2. *The FAQ changed what we thought "non-commercial" meant.* Reddit counts as commercial any
+   "monetized product", including apps with ads or paywalls and "free product features
+   available for upsell". It also bans showing Reddit content alongside ads, whatever the
+   contract. Our working idea ("free now, ads later, deal with it then") was a commercial
+   product waiting to happen. There's no "then": permission comes first.
+
+**Fix.** We stopped before writing any code and put three options to the product owner:
+a non-commercial prototype, applying for commercial access, or skipping Reddit. They chose the
+prototype. ADR-0019 turns this into four gates that a person checks (terms read, access granted,
+no ads or paywall while the feature is on, API only), and HLD §6 now warns whoever proposes ads.
+The design also sticks to the parts of the rules we *could* verify:
+rule-based extraction instead of an LLM (because of the clause on model training), no usernames,
+30-day text retention, and deletions enforced by a foreign-key cascade rather than by a filter
+that every query would have to remember.
+
+**What I'd do differently / lesson.** "Free" and "non-commercial" are not the same word.
+Platforms define commercial by *intent to monetise*, not by whether money is changing hands
+today. When a feature depends on someone else's data, write the monetisation constraint into the
+design doc on day one, where the person who proposes ads will see it. Also: when you can't read
+the binding document, say so plainly and make reading it a gate. Don't fill the gap from blog
+posts or from memory.
+
+---
+
 ## #17: "Remind me when I'm at the airport" turned out to need the scariest permission (2026-11-13)
 
 **Situation.** In review, the obvious improvement came up: fire the reminder when the phone is

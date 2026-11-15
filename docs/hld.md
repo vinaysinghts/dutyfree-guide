@@ -116,6 +116,31 @@ App ──(1) upload screenshots──▶ Storage: issue-screenshots (private)
  GitHub Actions (hourly) ──sweep──▶ file-issue  (files whatever (3) missed)
 ```
 
+**Reddit signals (proposed, [ADR-0019](adr/0019-reddit-recommendations.md); gated, not built).**
+This is a separate, low-trust pipeline next to the price pipeline. It answers "what do travellers
+recommend buying at BLR?" and keeps Reddit-reported prices on their own shelf.
+
+```
+ GitHub Actions (weekly) ── reddit job ───────────────────────────────────────────────┐
+   1 GATHER   airports in trips × queries ──OAuth, ≤⅓ of rate limit──▶ Reddit Data API
+              (subreddit list + site-wide search, posts + their comments)              │
+   2 EXTRACT  text ─▶ attribute to airport ─▶ match products (match_key + aliases)    │
+              ─▶ sentiment cues ─▶ price regex next to a matched product               │
+   3 STORE    reddit_items ─< reddit_mentions          (service-role key)             │
+                         └─< reddit_price_reports   ── ON DELETE CASCADE ──           │
+   4 COMPLY   every stored id ─▶ /api/info (100/call) ─▶ deleted? delete row ─────────┘
+              text older than 30 days ─▶ NULL
+
+ App ─▶ GET reddit_airport_rankings?airport_iata=eq.BLR ─▶ "Recommended on Reddit" list
+     ─▶ GET reddit_latest_price_reports?...           ─▶ "Reported on Reddit, 12 Mar 2026 ↗"
+        (never merged into latest_prices, never in cheapest-first sort or savings)
+```
+
+Why a separate pipeline and not another scraper adapter: an adapter produces **facts about one
+shop**. This produces **opinions and hearsay about an airport**, with different trust, retention
+and deletion rules. Keeping it in separate tables means a bug or a takedown here can't corrupt
+the price comparison, which is the core product.
+
 ## 4. Key decisions (summaries; full reasoning in ADRs)
 
 | # | Decision | Main trade-off |
@@ -133,6 +158,7 @@ App ──(1) upload screenshots──▶ Storage: issue-screenshots (private)
 | [0012](adr/0012-display-currency.md) | *Proposed:* user-picked display currency, converted on the device from the INR pivot; shelf price always shown | No API change vs. estimates differ from card rates |
 | [0013](adr/0013-blr-data-without-avolta.md) | Without Avolta: polite scrape + crowd/admin reports; BIAL's product API only after written gates (robots, terms, no spoofing, PII-free whitelist) | Nothing depends on a partner reply vs. BLR freshness rests on the edge and crowd volume |
 | [0014](adr/0014-travel-day-nudges.md) | Travel-day nudges as on-device local reminders + in-app card; "you're at an airport" from while-in-use location on app open, not a background geofence; airport-local times via bundled IANA zones; strict fatigue limits | Offline, private and serverless vs. no server-side targeting and phone-app-only reminders |
+| [0019](adr/0019-reddit-recommendations.md) | *Proposed:* Reddit-derived recommendations and Reddit-reported prices via the official API, non-commercial, behind person-checked gates; rule-based extraction; separate low-trust tables; deletions cascade | A free "what to buy here" signal vs. no ads or paywall while it's on, and low recall |
 
 ## 5. Scaling and failure thinking
 
@@ -145,6 +171,9 @@ App ──(1) upload screenshots──▶ Storage: issue-screenshots (private)
   and sorts last instead of being wrongly ranked.
 - **Abuse of crowd reports** → RLS limits inserts to the user's own rows; nothing is public until
   approved; length/range CHECK constraints reject garbage at the database.
+
+- **Reddit blocks or rate-limits us** → ADR-0011 applies: stop the run, warn, keep last week's
+  rankings. A user deleting a comment removes it from our tables within a week (the compliance pass), and the ranking changes with it because of the cascade.
 
 - **GitHub down or rate-limited** when a user reports a problem → the report is already saved;
   the user is told it will be posted shortly, and the sweep job files it. A bad or
@@ -159,3 +188,6 @@ App ──(1) upload screenshots──▶ Storage: issue-screenshots (private)
    work, the next lever is server-side targeting: ask travellers at airports whose prices are stalest.
 4. SEO landing pages ("cheapest Black Label at AMS") would be the growth channel. That's the trigger
    to revisit ADR-0001 (Next.js for the web).
+5. **Monetisation is gated by Reddit (ADR-0019 G3).** Showing Reddit-derived content in a build
+   with ads or a paywall needs Reddit's written permission first. Whoever proposes ads must check
+   this, or switch the Reddit feature off in that build.
