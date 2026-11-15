@@ -81,3 +81,20 @@ def test_sitemap_locs_wrapped_in_cdata_are_read():
 
     xml = "<sitemapindex><sitemap><loc><![CDATA[https://x/categorySitemap.xml]]></loc></sitemap></sitemapindex>"
     assert SITEMAP_LOC_RE.findall(xml) == ["https://x/categorySitemap.xml"]
+
+
+def test_product_page_report_finds_prices_or_says_shell(tmp_path):
+    from dutyfree_scrapers.probe import product_page_report
+
+    priced = ('<html><title>JW Black 1L</title><meta property="product:price:amount" content="125.00">'
+              '<script type="application/ld+json">{"@type":"Product"}</script><p>AED 125.00</p></html>')
+    shell = '<html><title></title><div id="main"></div></html>'
+
+    class Client:
+        def get(self, url):
+            return priced if "jw" in url else shell
+
+    r = product_page_report(Client(), "https://x/jw-black-1l/product/1", tmp_path)
+    assert r["meta_prices"] and r["aed_prices_in_html"] == ["AED 125.00"] and r["jsonld_types"] == ["Product"]
+    r = product_page_report(Client(), "https://x/other/product/2", tmp_path)
+    assert r["outcome"] == "ok" and not r["meta_prices"] and not r["aed_prices_in_html"]
