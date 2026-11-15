@@ -170,8 +170,9 @@ load, and the terms are about what you may do with what you read.
 **Decision.** Gate 2 fails, and per decision 6 we stop:
 - No DXB retailer row, no storefront-API adapter, no headless browser. The owner had approved the API route on the
   condition that "the terms allow it". They don't, so that approval doesn't apply.
-- The Scraper live check no longer probes DXB. A product-page probe written the same day was reverted before it was
-  needed. We send Dubai Duty Free's site no more automated traffic.
+- The Scraper live check no longer probes DXB, so we send Dubai Duty Free's site no more automated traffic.
+  A product-page probe pushed the same day had already started one live-check run (about a dozen polite requests)
+  when the terms arrived. It was reverted, and that run's output is not read or used.
 - The `dubaidutyfree` adapter and its tests stay in the repo, unregistered, as the starting point if permission ever comes.
 - What we keep from the live checks is facts about the site (its robots rules and category URL scheme), recorded here.
   We stored no prices or product data from it.
