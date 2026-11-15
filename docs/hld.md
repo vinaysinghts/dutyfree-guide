@@ -135,7 +135,7 @@ App ──(1) upload screenshots──▶ Storage: issue-screenshots (private)
 | [0013](adr/0013-blr-data-without-avolta.md) | Without Avolta: polite scrape + crowd/admin reports; BIAL's product API only after written gates (robots, terms, no spoofing, PII-free whitelist) | Nothing depends on a partner reply vs. BLR freshness rests on the edge and crowd volume |
 | [0014](adr/0014-travel-day-nudges.md) | Travel-day nudges as on-device local reminders + in-app card; "you're at an airport" from while-in-use location on app open, not a background geofence; airport-local times via bundled IANA zones; strict fatigue limits | Offline, private and serverless vs. no server-side targeting and phone-app-only reminders |
 | [0016](adr/0016-dxb-dubai-duty-free-adapter.md) | DXB: robots.txt allows crawling, but the site's terms forbid using its data, so no scraper; traveller photos only until written permission. AED priced from the USD peg | Respecting terms vs. no shop prices at DXB |
-| [0017](adr/0017-snapshot-then-parse.md) | *Proposed:* fetch saves raw pages to a private bucket (30 days), a separate offline step parses them; the machine running it is never a lever for access | Re-parse without re-fetching, real fixtures vs. storage and a retention job |
+| [0018](adr/0018-snapshot-then-parse.md) | *Proposed:* fetch saves raw pages to a private bucket (30 days), a separate offline step parses them; the machine running it is never a lever for access | Re-parse without re-fetching, real fixtures vs. storage and a retention job |
 
 ## 5. Scaling and failure thinking
 

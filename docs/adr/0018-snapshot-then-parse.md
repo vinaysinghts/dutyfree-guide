@@ -1,4 +1,4 @@
-# ADR-0017: Save raw pages first, parse them second ("snapshot, then parse")
+# ADR-0018: Save raw pages first, parse them second ("snapshot, then parse")
 
 **Status:** proposed, 2026-11-15. Builds on [ADR-0003](0003-python-scrapers-adapter-pattern.md),
 [ADR-0004](0004-scraping-policy.md), [ADR-0011](0011-blocked-is-not-disallowed.md) and
