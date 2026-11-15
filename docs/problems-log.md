@@ -6,7 +6,7 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ---
 
-## #19: Adding Dubai turned up three problems, and none was in the scraper (2026-11-13)
+## #19: Adding Dubai turned up three problems, and none was in the scraper (2026-11-13, closed 2026-11-15)
 
 **Situation.** DXB was the next airport to get shop prices (ADR-0016). The plan looked routine:
 copy the BLR adapter pattern, point it at `dubaidutyfree.com`, convert AED to INR.
@@ -42,6 +42,13 @@ copy the BLR adapter pattern, point it at `dubaidutyfree.com`, convert AED to IN
 politely. robots.txt welcomes crawlers outside the account pages, nothing blocked our honest user agent,
 and the sitemap lists real liquor categories. But every page is the same JavaScript shell, so there is no
 HTML to read. The last step, the shop's storefront API plus its terms, is a decision for the owner (ADR-0016).
+
+**The answer that mattered was in the terms.** Two days later the product owner read the site's terms in a browser.
+They forbid using "any data or information made available on or by this website in connection with any business or
+commercial undertaking (whether or not for profit)". So DXB stays traveller-photo only, unless Dubai Duty Free gives
+written permission. Five technical probes had answered *can we*. One paragraph of legal text answered *may we*,
+and it overrides the rest. Next time, get a person to read the terms **first**, before any probing. That is the
+cheapest gate, and it can end the work on its own.
 
 **A self-inflicted false negative.** The second live check reported the sitemap as empty, and I nearly wrote
 "DXB has no sitemap URLs" into the ADR. Printing the first 300 bytes showed a normal sitemap index

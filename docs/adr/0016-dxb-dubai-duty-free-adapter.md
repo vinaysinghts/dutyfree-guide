@@ -1,6 +1,6 @@
 # ADR-0016: A Dubai Duty Free (DXB) adapter, built dark and switched on only after a live check
 
-**Status:** accepted (adapter merged switched off), 2026-11-13. Builds on [ADR-0003](0003-python-scrapers-adapter-pattern.md),
+**Status:** accepted 2026-11-13; **DXB scraping ruled out by the site's terms, 2026-11-15** (see the end of this ADR). DXB stays traveller-photo only unless Dubai Duty Free gives written permission. Builds on [ADR-0003](0003-python-scrapers-adapter-pattern.md),
 [ADR-0004](0004-scraping-policy.md), [ADR-0011](0011-blocked-is-not-disallowed.md) and
 [ADR-0013](0013-blr-data-without-avolta.md). *Not legal advice.*
 
@@ -148,3 +148,35 @@ is still unread. The only remaining source is the storefront API that the page's
 ADR-0013 that is an owner decision, taken only after a person has read the terms. **We have not called it.**
 DXB stays traveller-photo only until that decision is made. The adapter stays merged and dark, and its eight
 category paths are correct, so an API-based adapter would reuse them as collection ids.
+
+## Gate 2, 2026-11-15: the terms forbid it, so we stop
+
+The product owner read the terms in a browser (they render only in JavaScript) and pasted them.
+The **"Dubai Duty Free Website Terms of Use"** section says:
+
+> You may as part of your use, copy electronically or print portions of the website but you should not use such
+> content to generate income of any kind.
+>
+> Any other use of materials on this website (including without limitation reproduction for a purpose other than
+> that noted above and any modification, distribution or republication) without our prior written permission is
+> prohibited. **In particular, you may not use any data or information made available on or by this website in
+> connection with any business or commercial undertaking (whether or not for profit).**
+
+That covers any route to the prices: HTML pages, the storefront API, a headless browser, or a snapshot of any of them.
+"Whether or not for profit" means being a free or hobby app doesn't change the answer. robots.txt said crawlers were
+welcome, and the terms still say no. This is why ADR-0004 asks for **both** to be read: robots.txt is about crawling
+load, and the terms are about what you may do with what you read.
+
+**Decision.** Gate 2 fails, and per decision 6 we stop:
+- No DXB retailer row, no storefront-API adapter, no headless browser. The owner had approved the API route on the
+  condition that "the terms allow it". They don't, so that approval doesn't apply.
+- The Scraper live check no longer probes DXB. A product-page probe written the same day was reverted before it was
+  needed. We send Dubai Duty Free's site no more automated traffic.
+- The `dubaidutyfree` adapter and its tests stay in the repo, unregistered, as the starting point if permission ever comes.
+- What we keep from the live checks is facts about the site (its robots rules and category URL scheme), recorded here.
+  We stored no prices or product data from it.
+- **Traveller photos are unaffected.** A shelf tag a traveller photographs in the shop isn't data "made available on or
+  by this website", so DXB keeps working as a traveller-photo airport (ADR-0006/0007), and AED pricing (decision 2) still applies.
+
+**Only way back in:** written permission from Dubai Duty Free (option E). If it comes, record it here and add the
+retailer row, and the adapter work above becomes useful again.

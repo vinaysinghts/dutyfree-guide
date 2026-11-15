@@ -35,4 +35,4 @@ The adapters were written without access to the live sites. For each retailer:
 |---|---|---|
 | `shopdutyfree` | BLR | Live (ADR-0011: stops when Akamai blocks a runner) |
 | `schiphol` | AMS | Paused: Cloudflare challenge on every request |
-| `dubaidutyfree` | DXB | **Dark**: no `retailers` row until the ADR-0016 gates pass on the live check |
+| `dubaidutyfree` | DXB | **Not used**: the site's terms forbid using its data (ADR-0016). Kept for if written permission comes. |
