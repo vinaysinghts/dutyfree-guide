@@ -101,46 +101,8 @@ def sitemap_summary(client, url: str, max_children: int = 3) -> dict:
             out.setdefault("child_errors", {})[child] = _error_details(e)["outcome"]
     out["urls_total"] = len(pages)
     out["liquor_urls"] = [u for u in pages if LIQUOR_LINK_RE.search(u)][:40]
-    # Single-product pages (not listings): the question for JS storefronts is whether *these*
-    # carry a price in their HTML, because sites often pre-render product pages for search engines.
-    out["liquor_product_urls"] = [u for u in pages if LIQUOR_LINK_RE.search(u) and "/category/" not in u][:10]
     out["sample_urls"] = pages[:10]
     return out
-
-
-PRICE_META = [("meta", {"property": "product:price:amount"}), ("meta", {"property": "og:price:amount"}),
-              ("meta", {"itemprop": "price"}), ("span", {"itemprop": "price"})]
-AED_PRICE_RE = re.compile(r"(?:AED|Dhs?)\s*[\d,]+(?:\.\d{2})?", re.I)
-
-
-def product_page_report(client, url: str, save_dir: Path) -> dict:
-    """What a plain GET of one product page returns: real HTML with a price, an app shell,
-    a bot challenge or a refusal. One request, same polite client; we report, never retry."""
-    row: dict = {"product_url": url}
-    try:
-        html = client.get(url)
-    except Exception as e:  # diagnostics only
-        row.update(_error_details(e))
-        return row
-    _save(save_dir, url, html)
-    soup = BeautifulSoup(html, "html.parser")
-    meta_prices = {}
-    for tag, attrs in PRICE_META:
-        found = soup.find(tag, attrs=attrs)
-        if found:
-            meta_prices[f"{tag}{attrs}"] = found.get("content") or found.get_text(strip=True)
-    og_title = soup.find("meta", attrs={"property": "og:title"})
-    row.update(
-        outcome="ok",
-        bytes=len(html),
-        title=soup.title.get_text(strip=True)[:120] if soup.title else None,
-        og_title=og_title.get("content") if og_title else None,
-        jsonld_types=sorted(set(re.findall(r'"@type"\s*:\s*"(\w+)"', html)))[:10],
-        meta_prices=meta_prices,
-        aed_prices_in_html=AED_PRICE_RE.findall(html)[:5],
-        text_start=soup.get_text(" ", strip=True)[:200],
-    )
-    return row
 
 
 def probe(adapter, client: PoliteClient, save_dir: Path, sample: int = 3, home: bool = True) -> list[dict]:
@@ -152,10 +114,7 @@ def probe(adapter, client: PoliteClient, save_dir: Path, sample: int = 3, home: 
             print(json.dumps({"robots_url": str(robots.url), "status": robots.status_code,
                               "crawl_delay_s": client.delay, "robots_txt": robots.text[:1500]}), flush=True)
             for sitemap in re.findall(r"(?im)^sitemap:\s*(\S+)", robots.text)[:2]:
-                summary = sitemap_summary(client, sitemap)
-                print(json.dumps(summary, ensure_ascii=False), flush=True)
-                for url in summary.get("liquor_product_urls", [])[:2]:
-                    print(json.dumps(product_page_report(client, url, save_dir), ensure_ascii=False), flush=True)
+                print(json.dumps(sitemap_summary(client, sitemap), ensure_ascii=False), flush=True)
         except httpx.HTTPError:
             pass
         # The home page shows the site's real category URLs when ours are wrong.
