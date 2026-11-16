@@ -58,8 +58,9 @@ customs-allowance warnings, a display currency other than INR (planned:
                          ┌──────────────────────────────────────────┴───────┐
                          │ Python scrapers (GitHub Actions cron, daily)     │
                          │  adapters: shopdutyfree (BLR + other Avolta      │
-                         │  airports), schiphol (AMS) ── polite HTTP ──▶ retailer sites
-                         │  fx: Frankfurter (ECB rates) ──────────────▶ api.frankfurter.dev
+                         │  airports), schiphol (AMS), dubaidutyfree (DXB,  │
+                         │  unused: terms) ── polite HTTP ──────────────▶ retailer sites
+                         │  fx: Frankfurter (ECB rates; AED/QAR from USD peg) ▶ api.frankfurter.dev
                          └──────────────────────────────────────────────────┘
 ```
 
@@ -144,6 +145,9 @@ App ──(1) upload screenshots──▶ Storage: issue-screenshots (private)
   with their date, so the app degrades instead of breaking.
 - **FX API down** → yesterday's rates stay in `fx_rates`; a missing currency shows "No INR rate yet"
   and sorts last instead of being wrongly ranked.
+- **An airport with no working scraper** (blocked, paused, or never built) → the app says so per
+  airport from the `airport_coverage` view, flags a live scraper's prices as stale after 3 days,
+  and offers a shelf-tag report for that airport (ADR-0015).
 - **Abuse of crowd reports** → RLS limits inserts to the user's own rows; nothing is public until
   approved; length/range CHECK constraints reject garbage at the database; a trigger resets
   server-owned fields and allows 30 reports/hour per user; buckets cap size, type and uploads/hour.

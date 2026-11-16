@@ -26,7 +26,7 @@ _NOISE_WORDS = {
     "gift", "box", "pack", "with", "and", "of",
 }
 
-_CURRENCY_SYMBOLS = {"₹": "INR", "€": "EUR", "£": "GBP", "$": "USD", "AED": "AED", "QAR": "QAR",
+_CURRENCY_SYMBOLS = {"₹": "INR", "€": "EUR", "£": "GBP", "$": "USD", "AED": "AED", "Dhs": "AED", "د.إ": "AED", "QAR": "QAR",
                      "Rs": "INR", "Rs.": "INR", "INR": "INR", "EUR": "EUR", "USD": "USD", "GBP": "GBP"}
 
 
