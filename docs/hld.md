@@ -133,6 +133,7 @@ App ──(1) upload screenshots──▶ Storage: issue-screenshots (private)
 | [0012](adr/0012-display-currency.md) | *Proposed:* user-picked display currency, converted on the device from the INR pivot; shelf price always shown | No API change vs. estimates differ from card rates |
 | [0013](adr/0013-blr-data-without-avolta.md) | Without Avolta: polite scrape + crowd/admin reports; BIAL's product API only after written gates (robots, terms, no spoofing, PII-free whitelist) | Nothing depends on a partner reply vs. BLR freshness rests on the edge and crowd volume |
 | [0014](adr/0014-travel-day-nudges.md) | Travel-day nudges as on-device local reminders + in-app card; "you're at an airport" from while-in-use location on app open, not a background geofence; airport-local times via bundled IANA zones; strict fatigue limits | Offline, private and serverless vs. no server-side targeting and phone-app-only reminders |
+| [0015](adr/0015-explain-coverage-gaps.md) | Coverage is a first-class state: per airport, say whether prices come from a live, stale or paused scraper (and why) or only from travellers, and offer a photo report for the gap | Honest and works for every airport vs. adds no prices by itself |
 
 ## 5. Scaling and failure thinking
 
@@ -143,6 +144,9 @@ App ──(1) upload screenshots──▶ Storage: issue-screenshots (private)
   with their date, so the app degrades instead of breaking.
 - **FX API down** → yesterday's rates stay in `fx_rates`; a missing currency shows "No INR rate yet"
   and sorts last instead of being wrongly ranked.
+- **An airport with no working scraper** (blocked, paused, or never built) → the app says so per
+  airport from the `airport_coverage` view, flags a live scraper's prices as stale after 3 days,
+  and offers a shelf-tag report for that airport (ADR-0015).
 - **Abuse of crowd reports** → RLS limits inserts to the user's own rows; nothing is public until
   approved; length/range CHECK constraints reject garbage at the database.
 
