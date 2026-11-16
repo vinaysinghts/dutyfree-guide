@@ -6,59 +6,42 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ---
 
-## #19: Adding Dubai turned up three problems, and none was in the scraper (2026-11-13, closed 2026-11-15)
+## #20: The function we "revoked from public" was callable by anyone (2026-11-13)
 
-**Situation.** DXB was the next airport to get shop prices (ADR-0016). The plan looked routine:
-copy the BLR adapter pattern, point it at `dubaidutyfree.com`, convert AED to INR.
+**Situation.** Asked "if someone decompiles the APK, can they hack the backend?" The quick answer
+(the key is public by design, RLS is the boundary) is true but untested, so we audited it: pulled
+the live APK apart, and checked every table, policy, function and bucket as the API roles see them.
 
-**Investigation.** Three separate things were in the way:
+**Investigation.** The APK held only the URL and the publishable key (the `sb_secret_` and
+`github_pat_` hits were supabase-js's guard and our own redaction regex). Every table had RLS. The
+interesting part was functions. `claim_issue_report`, which leases a problem report for the Edge
+Function, is `SECURITY DEFINER` (it bypasses RLS), and its migration said
+`revoke execute ... from public`. That reads like "only the service role can call it". It isn't:
+Supabase's default privileges grant EXECUTE on every new `public` function **directly** to `anon`
+and `authenticated`, and revoking from `PUBLIC` doesn't remove a direct grant. Recreating those
+grants in a scratch Postgres, `set role anon; select * from claim_issue_report(1)` returned another
+user's report and set it to `filing`. Looping over ids every 5 minutes would have burned every
+report's 5 attempts in ~25 minutes, silently stopping all problem reports from reaching GitHub.
 
-1. **We couldn't read the site from where the code is written.** The sandbox's proxy refuses the host,
-   and a robots-respecting page fetcher got a client error on `/robots.txt` and the terms page. So
-   robots.txt, the terms and the markup were all unread. ADR-0004 says a person reads robots.txt and the
-   terms *before* we scrape, so "write it and see" was off the table.
-2. **AED has no ECB rate.** Our FX comes from Frankfurter, which republishes the European Central Bank's
-   ~30 reference currencies. The Gulf currencies aren't among them. `cli.py` already asked for `AED` on
-   every run, so the first real scrape would have asked for a rate that doesn't exist. Traveller photos from
-   DXB are priced in AED, so those prices had no INR value either. (We couldn't call Frankfurter from the
-   sandbox to see whether it errors or just omits AED; either way the rate is missing.)
-3. **The "daily" scrape has never run.** All four scheduled runs of *Daily price scrape* are `skipped`:
-   the job is gated on the `SCRAPE_ENABLED` repository variable, which isn't `true`. And scheduled
-   workflows always run from the default branch, which is `feat/mvp` (older than `main`). So "Shop prices,
-   updated daily" for DXB would have been false even with a perfect adapter.
+Why CI missed it: the SQL tests ran as the superuser (which ignores grants and RLS), and the test
+stubs had none of Supabase's grants. The test environment couldn't express the bug.
 
-**Fix.**
-- AED and QAR are pegged to the US dollar by their central banks (3.6725 and 3.64), so `fx.py` fetches USD
-  and derives them, and never asks the ECB for a currency it doesn't publish. Unknown currencies are logged
-  and skipped rather than failing the run. Tests use `httpx.MockTransport`, so they run offline.
-- The adapter is built **dark**: merged and tested, but no `retailers` row, so the app keeps telling the truth
-  ("Traveller prices only"). The Scraper live check now probes DXB from GitHub's runners and prints
-  robots.txt, the home page's liquor links and its terms/policy links (`policy_links`, new). A person reads
-  those, and ADR-0016 lists the gates that must pass before a one-line migration switches DXB on.
-- The scheduling problem is flagged to the owner, not changed here: it needs repository settings
-  (`SCRAPE_ENABLED=true`, and the default branch set to `main`), which code can't fix.
+The same pass found smaller gaps: a price report could carry forged reviewer fields, someone
+else's photo path, or a 2099 date (an approved price would then stay "latest" forever); and
+nothing rate-limited price reports or photo uploads, which took any file type up to 50 MiB.
 
-**Where it ended.** Five live-check runs from GitHub's runners settled the questions we could answer
-politely. robots.txt welcomes crawlers outside the account pages, nothing blocked our honest user agent,
-and the sitemap lists real liquor categories. But every page is the same JavaScript shell, so there is no
-HTML to read. The last step, the shop's storefront API plus its terms, is a decision for the owner (ADR-0016).
+**Fix.** Migration `20261113030000_harden_data_api_access.sql`: revoke the function from `anon`
+and `authenticated`; a `BEFORE INSERT` trigger on price reports that resets server-owned fields,
+checks the photo folder and dates, and allows 30 reports/hour; bucket size and image-type limits;
+upload rate limits in the storage policies. The test stubs now recreate Supabase's grants, and
+`60_access_control.sql` runs as `anon`/`authenticated` with three guardrails: RLS on every table,
+an allowlist of `SECURITY DEFINER` functions the API roles may call, and `security_invoker` on
+every view. Run against the old migrations, it fails and names `claim_issue_report`.
 
-**The answer that mattered was in the terms.** Two days later the product owner read the site's terms in a browser.
-They forbid using "any data or information made available on or by this website in connection with any business or
-commercial undertaking (whether or not for profit)". So DXB stays traveller-photo only, unless Dubai Duty Free gives
-written permission. Five technical probes had answered *can we*. One paragraph of legal text answered *may we*,
-and it overrides the rest. Next time, get a person to read the terms **first**, before any probing. That is the
-cheapest gate, and it can end the work on its own.
-
-**A self-inflicted false negative.** The second live check reported the sitemap as empty, and I nearly wrote
-"DXB has no sitemap URLs" into the ADR. Printing the first 300 bytes showed a normal sitemap index
-with every `<loc>` wrapped in `<![CDATA[…]]>`, which our regex didn't match. A "0 results" from a
-probe is a claim about the probe as much as about the site, so always print enough raw input to
-tell the two apart.
-
-**Lesson.** "Add a source" has three layers: *may* we read it, *can* we interpret it (currency, units),
-and *does* the pipeline actually run. Check each before claiming freshness to users. And a pegged
-currency is a fact you can encode, not a rate you need to fetch.
+**Lesson.** "Revoke from public" is not "nobody else": privileges are additive, so check what was
+granted *directly*, and know your platform's default grants. More generally, a security test that
+runs as superuser proves nothing; test as the role the attacker gets. Writeup:
+[docs/security.md](security.md), decision: [ADR-0017](adr/0017-data-api-access-model.md).
 
 ---
 
