@@ -37,11 +37,12 @@ issue_reports (reporter → auth.users)   storage: issue-screenshots/<uid>/<repo
 | Table | Why it exists / notable choices |
 |---|---|
 | `airports` | From OurAirports, with `icao` and `keywords` (alternate names and codes). `search_text` is a **generated column** (`search_fold`: accents and punctuation removed) + trigram index. The app searches its bundled copy of the same list (§3.7). |
-| `retailers` | A shop at an airport. `adapter` says which scraper collects it; null = crowd-only. Many airports share an adapter (Avolta's platform). |
+| `retailers` | A shop at an airport. `adapter` says which scraper collects it; null = crowd-only. `paused_reason` is the traveller-facing reason when `active = false`. Many airports share an adapter (Avolta's platform). |
 | `products` | Canonical bottle. `match_key` = normalized brand+name+volume; UNIQUE so upserts dedupe. |
 | `prices` | **Append-only** history (never updated). Gives price charts later for free and makes scrape runs idempotent-ish. |
 | `latest_prices` (view) | `DISTINCT ON (product_id, retailer_id) … ORDER BY observed_at DESC` = the newest row per pair, converted to INR. `security_invoker` so RLS still applies. |
 | `fx_rates` | INR per 1 unit. One row per currency, overwritten daily. |
+| `airport_coverage` (view) | Per airport: `scraper` = `live` (an active retailer has an adapter) / `paused` (adapters exist, all inactive) / `none` (no adapter, including no retailer row), plus `paused_reason`, `last_scraped_at`, `crowd_products`, `last_reported_at`. `airports LEFT JOIN retailers GROUP BY iata`; the app filters by trip, so the 3,200-row airports table costs nothing. ADR-0015. |
 | `price_submissions` | Review queue. Typed fields are optional when `photo_path` is set (CHECK `photo_or_details`). Stores `ocr_text`, `ocr_draft`, capture coordinates, `photo_taken_at`, and the trigger-computed `distance_km` / `location_check`. `via` (`manual` / `nudge_card` / `nudge_notification`) records what started the report, to measure travel-day nudges (§3.10). Partial index on `status='pending'` keeps the queue query fast. |
 | `admins` | Membership table read by `is_admin()`. |
 | `issue_reports` | In-app problem reports, used as an **outbox** for GitHub issues (§3.8). Client writes `category`, `description`, `screenshot_paths`, `context` (jsonb, ≤ 16 KB). The function owns `status` (`pending → filing → filed`/`failed`), `attempts`, `claimed_at`, `last_error`, `github_issue_number/url`. Partial index on unfiled rows for the sweep. |
@@ -267,6 +268,7 @@ open a camera from a real tap, so on web it stops at the airport.
 | `lib/travelDay.tsx` | Provider wiring trip + policy + reminders + location + storage. |
 | `components/TravelDayCard.tsx`, `StopPlanEditor.tsx`, `RemindersSwitch.tsx` | The card, the "when are you here?" fields, the opt-in switch. |
 | `lib/compare.ts` | Pure ranking logic (above). |
+| `lib/coverage.ts` / `lib/useCoverage.ts` | `airport_coverage` row → label + sentence + "ask for a photo?" (live / stale after 3 days / travellers only). Pure / the hook that loads it for the trip, showing nothing until loaded rather than guessing. ADR-0015. |
 | `components/AgeGate.tsx` | 18+ confirmation, required by app stores for alcohol content. |
 | `components/AirportSearch.tsx` | 200 ms debounced search; cancels stale responses. |
 | `lib/airportSearch.ts` / `lib/airports.ts` | Folding, matching and ranking (§3.7) / the bundled airport list. |

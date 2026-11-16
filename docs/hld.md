@@ -146,6 +146,9 @@ App ──(1) upload screenshots──▶ Storage: issue-screenshots (private)
   with their date, so the app degrades instead of breaking.
 - **FX API down** → yesterday's rates stay in `fx_rates`; a missing currency shows "No INR rate yet"
   and sorts last instead of being wrongly ranked.
+- **An airport with no working scraper** (blocked, paused, or never built) → the app says so per
+  airport from the `airport_coverage` view, flags a live scraper's prices as stale after 3 days,
+  and offers a shelf-tag report for that airport (ADR-0015).
 - **Abuse of crowd reports** → RLS limits inserts to the user's own rows; nothing is public until
   approved; length/range CHECK constraints reject garbage at the database.
 
