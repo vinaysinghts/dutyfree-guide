@@ -113,3 +113,24 @@ def test_crawl_dedupes_same_bottle_within_one_page():
 
     got = list(OnePage("https://x").crawl(Client()))
     assert [p.name for p in got] == ["Black Label 1L", "Red Label 1L"] and got[0].price == Decimal("3450")
+
+
+def test_dubaidutyfree_card_fallback_reads_aed():
+    adapter = ADAPTERS["dubaidutyfree"]("https://www.dubaidutyfree.com")
+    jw, gin = adapter.parse_listing(read("dubaidutyfree_cards.html"))
+    assert jw.price == Decimal("125.00") and jw.currency == "AED" and jw.volume_ml == 1000
+    assert jw.brand == "Johnnie Walker"
+    # The wishlist "#" link is skipped in favour of the product link.
+    assert jw.url == "https://www.dubaidutyfree.com/liquor/whisky/johnnie-walker-black-label-1l"
+    # "Dhs" is how Dubai writes dirhams; the size comes from its own element.
+    assert gin.price == Decimal("1150") and gin.currency == "AED" and gin.volume_ml == 1000
+    # Same bottle as BLR's JSON-LD listing, so the app can compare DXB with BLR.
+    blr = products_from_jsonld(read("jsonld_listing.html"), "INR")
+    assert jw.key in {p.key for p in blr}
+
+
+def test_dubaidutyfree_does_not_guess_pages():
+    from bs4 import BeautifulSoup
+    adapter = ADAPTERS["dubaidutyfree"]("https://www.dubaidutyfree.com")
+    soup = BeautifulSoup(read("dubaidutyfree_cards.html"), "html.parser")
+    assert adapter.next_page_url(soup, "https://www.dubaidutyfree.com/liquor", 2) is None

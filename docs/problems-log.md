@@ -6,45 +6,59 @@ interview: **situation → investigation → fix → what I'd do differently**.
 
 ---
 
-## #18: "Why can't it fetch prices from AMS, BSL, DXB?" Nothing was failing (2026-11-13)
+## #19: Adding Dubai turned up three problems, and none was in the scraper (2026-11-13, closed 2026-11-15)
 
-**Situation.** The first two reports from the in-app reporter (issues #23, #24) came from a trip
-AMS → BLR → BSL → DXB: *"Why is it not able to fetch prices from bdx, bsl, ams"*. Only BLR had
-prices. ("bdx" read like Bordeaux's code, BOD, but the trip in the report's context table showed
-it was DXB. The attached context saved a wrong guess.)
+**Situation.** DXB was the next airport to get shop prices (ADR-0016). The plan looked routine:
+copy the BLR adapter pattern, point it at `dubaidutyfree.com`, convert AED to INR.
 
-**Investigation.** "Not able to fetch" sounds like a scraper bug, so I checked the source of
-truth for *what we try to fetch*, the `retailers` table, before looking at any logs:
-- **AMS** has a retailer, but `active = false`: we paused it ourselves when Schiphol started
-  answering every request with a Cloudflare challenge (problems log #9, ADR-0011).
-- **BSL and DXB** have **no retailer row at all**. No scraper has ever existed for them.
-- **BLR** is the only live source.
+**Investigation.** Three separate things were in the way:
 
-So there was no fetch to fail. The real bug was in the app: one banner, *"No prices collected yet
-for AMS, BSL, DXB"*, for three different situations. "Yet" promised prices that were never coming,
-and it didn't say what the traveller could do. The database knew the difference between "paused"
-and "never built". Nothing exposed it to the app.
+1. **We couldn't read the site from where the code is written.** The sandbox's proxy refuses the host,
+   and a robots-respecting page fetcher got a client error on `/robots.txt` and the terms page. So
+   robots.txt, the terms and the markup were all unread. ADR-0004 says a person reads robots.txt and the
+   terms *before* we scrape, so "write it and see" was off the table.
+2. **AED has no ECB rate.** Our FX comes from Frankfurter, which republishes the European Central Bank's
+   ~30 reference currencies. The Gulf currencies aren't among them. `cli.py` already asked for `AED` on
+   every run, so the first real scrape would have asked for a rate that doesn't exist. Traveller photos from
+   DXB are priced in AED, so those prices had no INR value either. (We couldn't call Frankfurter from the
+   sandbox to see whether it errors or just omits AED; either way the rate is missing.)
+3. **The "daily" scrape has never run.** All four scheduled runs of *Daily price scrape* are `skipped`:
+   the job is gated on the `SCRAPE_ENABLED` repository variable, which isn't `true`. And scheduled
+   workflows always run from the default branch, which is `feat/mvp` (older than `main`). So "Shop prices,
+   updated daily" for DXB would have been false even with a perfect adapter.
 
-**Fix.** Made coverage a first-class state (ADR-0015):
-1. `airport_coverage` view: per airport, `live` / `paused` / `none`, the pause reason, when the
-   scraper last saved a price, and how many traveller prices exist.
-2. `retailers.paused_reason`: whoever pauses a scraper writes, in traveller-facing words, why.
-3. `lib/coverage.ts` (pure, 8 tests): one label for the trip list ("Shop prices, updated daily" /
-   "Traveller prices only") and one sentence for the prices screen, e.g. *"Schiphol's shop blocks
-   automated price checks, and we don't get around that. AMS prices come from travellers'
-   shelf-tag photos. None reported yet: yours would be the first."* Plus a **stale** state: a live
-   scraper with nothing newer than 3 days gets "may be out of date", so the BLR Akamai case
-   (problems log #13) can't silently pass as current either.
-4. "Snap a shelf tag at AMS" opens Report a price with the airport already chosen.
+**Fix.**
+- AED and QAR are pegged to the US dollar by their central banks (3.6725 and 3.64), so `fx.py` fetches USD
+  and derives them, and never asks the ECB for a currency it doesn't publish. Unknown currencies are logged
+  and skipped rather than failing the run. Tests use `httpx.MockTransport`, so they run offline.
+- The adapter is built **dark**: merged and tested, but no `retailers` row, so the app keeps telling the truth
+  ("Traveller prices only"). The Scraper live check now probes DXB from GitHub's runners and prints
+  robots.txt, the home page's liquor links and its terms/policy links (`policy_links`, new). A person reads
+  those, and ADR-0016 lists the gates that must pass before a one-line migration switches DXB on.
+- The scheduling problem is flagged to the owner, not changed here: it needs repository settings
+  (`SCRAPE_ENABLED=true`, and the default branch set to `main`), which code can't fix.
 
-I deliberately did **not** write BSL and DXB scrapers in this fix. It's what the report literally
-asks for, but it would fix two airports out of ~3,200, and the next traveller through FRA or IST
-would file the same issue. Those are separate, demand-led pieces of work (ADR-0015 "Revisit when").
+**Where it ended.** Five live-check runs from GitHub's runners settled the questions we could answer
+politely. robots.txt welcomes crawlers outside the account pages, nothing blocked our honest user agent,
+and the sitemap lists real liquor categories. But every page is the same JavaScript shell, so there is no
+HTML to read. The last step, the shop's storefront API plus its terms, is a decision for the owner (ADR-0016).
 
-**Lesson.** When a user says "it can't fetch X", check what the system *intends* to fetch before
-debugging *how* it fetches. And an empty state is a feature: "no data" for different reasons needs
-different words, because each reason leads to a different action. Here the most useful fix was
-making the app say what we already knew.
+**The answer that mattered was in the terms.** Two days later the product owner read the site's terms in a browser.
+They forbid using "any data or information made available on or by this website in connection with any business or
+commercial undertaking (whether or not for profit)". So DXB stays traveller-photo only, unless Dubai Duty Free gives
+written permission. Five technical probes had answered *can we*. One paragraph of legal text answered *may we*,
+and it overrides the rest. Next time, get a person to read the terms **first**, before any probing. That is the
+cheapest gate, and it can end the work on its own.
+
+**A self-inflicted false negative.** The second live check reported the sitemap as empty, and I nearly wrote
+"DXB has no sitemap URLs" into the ADR. Printing the first 300 bytes showed a normal sitemap index
+with every `<loc>` wrapped in `<![CDATA[…]]>`, which our regex didn't match. A "0 results" from a
+probe is a claim about the probe as much as about the site, so always print enough raw input to
+tell the two apart.
+
+**Lesson.** "Add a source" has three layers: *may* we read it, *can* we interpret it (currency, units),
+and *does* the pipeline actually run. Check each before claiming freshness to users. And a pegged
+currency is a fact you can encode, not a rate you need to fetch.
 
 ---
 

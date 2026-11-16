@@ -58,8 +58,9 @@ customs-allowance warnings, a display currency other than INR (planned:
                          ┌──────────────────────────────────────────┴───────┐
                          │ Python scrapers (GitHub Actions cron, daily)     │
                          │  adapters: shopdutyfree (BLR + other Avolta      │
-                         │  airports), schiphol (AMS) ── polite HTTP ──▶ retailer sites
-                         │  fx: Frankfurter (ECB rates) ──────────────▶ api.frankfurter.dev
+                         │  airports), schiphol (AMS), dubaidutyfree (DXB,  │
+                         │  unused: terms) ── polite HTTP ──────────────▶ retailer sites
+                         │  fx: Frankfurter (ECB rates; AED/QAR from USD peg) ▶ api.frankfurter.dev
                          └──────────────────────────────────────────────────┘
 ```
 
@@ -133,7 +134,8 @@ App ──(1) upload screenshots──▶ Storage: issue-screenshots (private)
 | [0012](adr/0012-display-currency.md) | *Proposed:* user-picked display currency, converted on the device from the INR pivot; shelf price always shown | No API change vs. estimates differ from card rates |
 | [0013](adr/0013-blr-data-without-avolta.md) | Without Avolta: polite scrape + crowd/admin reports; BIAL's product API only after written gates (robots, terms, no spoofing, PII-free whitelist) | Nothing depends on a partner reply vs. BLR freshness rests on the edge and crowd volume |
 | [0014](adr/0014-travel-day-nudges.md) | Travel-day nudges as on-device local reminders + in-app card; "you're at an airport" from while-in-use location on app open, not a background geofence; airport-local times via bundled IANA zones; strict fatigue limits | Offline, private and serverless vs. no server-side targeting and phone-app-only reminders |
-| [0015](adr/0015-explain-coverage-gaps.md) | Coverage is a first-class state: per airport, say whether prices come from a live, stale or paused scraper (and why) or only from travellers, and offer a photo report for the gap | Honest and works for every airport vs. adds no prices by itself |
+| [0016](adr/0016-dxb-dubai-duty-free-adapter.md) | DXB: robots.txt allows crawling, but the site's terms forbid using its data, so no scraper; traveller photos only until written permission. AED priced from the USD peg | Respecting terms vs. no shop prices at DXB |
+| [0018](adr/0018-snapshot-then-parse.md) | *Proposed:* fetch saves raw pages to a private bucket (30 days), a separate offline step parses them; the machine running it is never a lever for access | Re-parse without re-fetching, real fixtures vs. storage and a retention job |
 
 ## 5. Scaling and failure thinking
 
