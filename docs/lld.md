@@ -46,6 +46,7 @@ issue_reports (reporter → auth.users)   storage: issue-screenshots/<uid>/<repo
 | `price_submissions` | Review queue. Typed fields are optional when `photo_path` is set (CHECK `photo_or_details`). Stores `ocr_text`, `ocr_draft`, capture coordinates, `photo_taken_at`, and the trigger-computed `distance_km` / `location_check`. `via` (`manual` / `nudge_card` / `nudge_notification`) records what started the report, to measure travel-day nudges (§3.10). Partial index on `status='pending'` keeps the queue query fast. |
 | `admins` | Membership table read by `is_admin()`. |
 | `issue_reports` | In-app problem reports, used as an **outbox** for GitHub issues (§3.8). Client writes `category`, `description`, `screenshot_paths`, `context` (jsonb, ≤ 16 KB). The function owns `status` (`pending → filing → filed`/`failed`), `attempts`, `claimed_at`, `last_error`, `github_issue_number/url`. Partial index on unfiled rows for the sweep. |
+| `reddit_items`, `reddit_mentions`, `reddit_price_reports` | *Planned, ADR-0019.* A low-trust Reddit pipeline kept apart from `prices`. No usernames. Text is kept 30 days at most. A deleted item cascades to its mentions and prices. Details in §3.11. |
 
 ### Row level security (RLS)
 
@@ -254,6 +255,141 @@ schedule the rest with `identifier = 'nudge:<IATA>:<date>'` and a `DATE` trigger
 **Report screen** reads `airport`, `snap`, `via`, `nudge` route params once per distinct set
 (`useRef` guard), pre-selects the airport, and calls `takePhoto(true)` on native. Browsers only
 open a camera from a real tap, so on web it stops at the airport.
+
+### 3.11 Reddit signals (ADR-0019, proposed: design only, nothing built yet)
+
+**Module layout (planned).**
+```
+scrapers/reddit/
+  client.py      OAuth client_credentials token, honest User-Agent, header-driven pacer, SiteBlocked on 401/403/429
+  queries.py     airport → search terms; subreddit allow-list
+  gather.py      search → posts → comments (one /comments/{id} call per thread)
+  attribute.py   which airport a mention is about
+  extract.py     product mentions + sentiment cues
+  price.py       currency/amount/volume next to a matched product
+  store.py       upserts into reddit_* tables (service-role key)
+  comply.py      /api/info re-check, text purge after 30 days
+  tests/fixtures/  synthetic threads only (no real Reddit text in the repo)
+```
+
+**Tables (planned migration).** Everything here is written only with the service-role key. The
+app reads only the two views, and the ADR-0017 rules apply: views use `security_invoker`, and any
+helper `SECURITY DEFINER` function has its rights revoked from `anon` and `authenticated`.
+```sql
+create table reddit_items (
+  fullname       text primary key,            -- 't3_abc' (post) / 't1_xyz' (comment)
+  kind           text not null check (kind in ('post','comment')),
+  thread_id      text not null,               -- the post's fullname, for per-thread caps
+  subreddit      text not null,
+  permalink      text not null,
+  created_at     timestamptz not null,        -- the author's time: "newest" means this
+  score          int not null default 0,
+  body           text,                        -- NULLed after 30 days by comply.py
+  thread_airports text[] not null default '{}',-- airports named in the post title
+  fetched_at     timestamptz not null default now(),
+  checked_at     timestamptz not null default now()
+);                                            -- no author column, on purpose
+
+create table reddit_mentions (
+  id             bigint generated always as identity primary key,
+  item_fullname  text not null references reddit_items on delete cascade,
+  product_id     bigint not null references products,
+  airport_iata   text not null references airports,
+  sentiment      smallint not null check (sentiment between -1 and 1),
+  matched_text   text not null check (length(matched_text) <= 80),
+  extractor      text not null,               -- e.g. 'rules-v1', so we can re-run and compare
+  unique (item_fullname, product_id)          -- one comment counts a product once
+);
+
+create table reddit_price_reports (
+  id             bigint generated always as identity primary key,
+  item_fullname  text not null references reddit_items on delete cascade,
+  product_id     bigint not null references products,
+  airport_iata   text not null references airports,
+  amount         numeric(10,2) not null check (amount > 0),
+  currency       char(3) not null,
+  currency_guessed boolean not null default false, -- '$' with no other clue → USD, flagged
+  volume_ml      int,                         -- null = not stated; UI says "size not stated"
+  reported_at    timestamptz not null,        -- = reddit_items.created_at
+  extractor      text not null
+);
+```
+Why a cascade and not a `deleted` flag: a flag needs every query to remember `where not deleted`,
+and one forgotten filter shows deleted content. With a cascade, the delete *is* the compliance.
+
+**Gather budget.** Per airport: about 4 search calls (site-wide search plus the allow-listed
+subreddits, past year, newest first) and up to 25 thread fetches, so about 30 calls. For 50 trip
+airports that's 1,500 calls. At a self-imposed 30 QPM (a third of the 100 QPM limit) that's about
+50 minutes, once a week. The compliance pass costs `ceil(items / 100)` calls. The pacer reads
+`X-Ratelimit-Remaining` and `X-Ratelimit-Reset`, sleeps when there are fewer than 10 calls left,
+and never parallelises.
+
+**Airport attribution `attribute(item, thread)`**, the hard part:
+1. Find airport names in the comment's text: IATA code as a whole word in capitals, plus the
+   airport's `keywords` from §2 ("Kempegowda", "Schiphol"). Codes that are also common words
+   (`MAN`, `BUD`, `CAN`) only count next to "airport", "duty free" or "terminal".
+2. If exactly one is found → that airport. If more than one → each product mention goes to the
+   nearest airport name in the same sentence. If there's none in the sentence → drop it.
+3. If none is found → use the thread's airport, if the title names exactly one. Otherwise drop it.
+
+We'd rather drop a mention than assign it to the wrong airport. We track the drop rate.
+
+**Product matching `extract(text)`.** Generate word n-grams (1 to 6 words), normalise them with the
+same steps as `match_key` (§3.1, without the volume), and look them up in
+`products.match_key` stems ∪ `product_aliases(alias → product_id)`. Keep the longest match first,
+so "Johnnie Walker Blue" beats "Johnnie Walker". A brand-only match ("Glenfiddich") with no line
+name is dropped, because it would spread votes over a whole range.
+
+**Sentiment** looks at a window of ±8 words. `+1` cues: "grab", "get the", "worth it", "great
+price", "recommend", "buy". `−1` cues: "skip", "overpriced", "cheaper at home", "not worth".
+"Not" or "don't" just before a cue flips it. No cue → `0`. Neutral mentions count as a small
+positive in the score (0.25), because people mostly mention bottles they bought.
+
+**Price extraction `price(sentence, product)`.** The regex runs only on the sentence that contains
+the matched product: `(₹|Rs\.?|INR|€|EUR|£|GBP|AED|Dhs?|\$|USD|SGD|S\$)\s?(\d[\d,]*(\.\d{1,2})?)`,
+plus the same with the currency after the number. A volume pattern comes from `shelfTag.ts` (1L,
+70cl, 750ml). Sanity bounds: the amount converted to INR must be between ₹500 and ₹500,000 for a
+bottle, otherwise it's dropped (it's probably a total or a typo). A bare `$` is stored as USD
+with `currency_guessed = true`, and the app shows "≈".
+
+**Ranking view (sketch).**
+```sql
+create view reddit_airport_rankings with (security_invoker) as
+with m as (
+  select rm.airport_iata, rm.product_id, ri.thread_id,
+         (case rm.sentiment when 1 then 1.0 when 0 then 0.25 else -1.0 end)
+       * power(0.5, extract(epoch from now() - ri.created_at) / 86400 / 180)   -- half-life 180 d
+       * (1 + log(2, 1 + greatest(ri.score, 0)))                               -- votes, damped
+         as w,
+         row_number() over (partition by rm.airport_iata, rm.product_id, ri.thread_id
+                            order by ri.score desc) as nth_in_thread
+  from reddit_mentions rm join reddit_items ri on ri.fullname = rm.item_fullname
+)
+select airport_iata, product_id,
+       sum(w)                     as score,
+       count(*)                   as mentions,
+       count(distinct thread_id)  as threads
+from m where nth_in_thread <= 3                         -- one busy thread can't decide it
+group by airport_iata, product_id
+having count(distinct thread_id) >= 3 and sum(w) > 0;
+```
+`reddit_latest_price_reports` is `distinct on (airport_iata, product_id) … order by reported_at
+desc`, keeping only `reported_at > now() - interval '12 months'`.
+Why `log` on votes: a comment with 2,000 upvotes is more trustworthy than one with 2, but not
+1,000 times more. Why a half-life rather than a cut-off: duty-free ranges change slowly, and a
+cut-off makes rankings jump when an old thread falls off the edge.
+
+**Testing.** Pure functions with synthetic fixtures: `attribute` (the multi-airport, ambiguous
+IATA code and title-only cases), `extract` (longest match, brand-only dropped, aliases), `price`
+(₹/Rs/€/$ with ≈, out-of-bounds amounts dropped, the currency after the number). An SQL test
+checks that deleting a `reddit_items` row removes its mentions and prices, and that the view
+updates. A labelled sample of about 200 real comments is kept **outside** the repo (private
+bucket, 30 days) to measure precision and recall before launch. The ADR-0019 bar is recall ≥ 60%.
+
+**App surface.** On the airport screen, a "Recommended on Reddit" list: the top 10 by score,
+each showing "mentioned in N threads", with a link to the threads. Under a bottle's normal
+prices, a separate, muted line: "Reported on Reddit: €38 (12 Mar 2026) ↗". It is never part of
+the INR sort or the "you save" calculation.
 
 ## 4. Client modules
 
