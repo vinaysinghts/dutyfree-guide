@@ -10,10 +10,15 @@ import { TravelDayCard } from '@/components/TravelDayCard';
 import { Button, Card, Muted, useColors } from '@/components/ui';
 import { isDemoMode } from '@/lib/supabase';
 import { useTrip } from '@/lib/trip';
+import type { CoverageNote } from '@/lib/coverage';
+import { useCoverage } from '@/lib/useCoverage';
 
 export default function TripScreen() {
   const c = useColors();
   const trip = useTrip();
+  // Set expectations while planning: which stops have shop prices and which rely on travellers.
+  const coverage = useCoverage(trip.airports.map((a) => a.iata));
+  const labelFor = (iata: string) => coverage.find((n) => n.iata === iata);
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
@@ -35,6 +40,7 @@ export default function TripScreen() {
               <View style={{ flex: 1, backgroundColor: 'transparent' }}>
                 <Text style={{ fontWeight: '600' }}>{a.iata} · {a.city ?? a.name}</Text>
                 <Muted>{a.name}</Muted>
+                <CoverageLabel note={labelFor(a.iata)} />
                 <StopPlanEditor iata={a.iata} />
               </View>
               <IconButton label="✕" hint={`Remove ${a.iata}`} onPress={() => trip.remove(a.iata)} />
@@ -47,6 +53,12 @@ export default function TripScreen() {
       ) : null}
     </ScrollView>
   );
+}
+
+function CoverageLabel({ note }: { note?: CoverageNote }) {
+  const c = useColors();
+  if (!note) return null;
+  return <Muted style={note.kind === 'live' ? undefined : { color: c.warn }}>{note.label}</Muted>;
 }
 
 function IconButton({ label, hint, onPress, disabled }: { label: string; hint: string; onPress: () => void; disabled?: boolean }) {

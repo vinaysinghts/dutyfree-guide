@@ -4,6 +4,7 @@
  */
 import { searchAirportList } from './airportSearch';
 import { allAirports } from './airports';
+import type { AirportCoverage } from './coverage';
 import { DEMO_PRICES } from './demo';
 import { ensureSession, supabase } from './supabase';
 import { nearestAirport, type GeoPoint } from './geo';
@@ -33,6 +34,35 @@ export async function pricesAt(iatas: string[]): Promise<PriceRow[]> {
   }));
 }
 
+/**
+ * Where each airport's prices come from (live scraper, paused one, or travellers only).
+ * Airports with no retailer row come back missing; lib/coverage.ts reads that as
+ * "travellers only". ADR-0015.
+ */
+export async function coverageAt(iatas: string[]): Promise<AirportCoverage[]> {
+  if (iatas.length === 0) return [];
+  if (!supabase) return demoCoverage(iatas);
+  const { data, error } = await supabase.from('airport_coverage').select('*').in('airport_iata', iatas);
+  if (error) throw error;
+  return (data as AirportCoverage[]).map((r) => ({ ...r, crowd_products: Number(r.crowd_products) }));
+}
+
+/** Demo mode: an airport with any sample shop price counts as live, as of now. */
+function demoCoverage(iatas: string[]): AirportCoverage[] {
+  return iatas.map((iata) => {
+    const rows = DEMO_PRICES.filter((r) => r.airport_iata === iata);
+    const crowd = rows.filter((r) => r.source === 'crowd');
+    return {
+      airport_iata: iata,
+      scraper: rows.some((r) => r.source === 'scraped') ? 'live' : 'none',
+      paused_reason: null,
+      last_scraped_at: rows.some((r) => r.source === 'scraped') ? new Date().toISOString() : null,
+      crowd_products: new Set(crowd.map((r) => r.product_id)).size,
+      last_reported_at: crowd[0]?.observed_at ?? null,
+    };
+  });
+}
+
 /** Closest airports to where the user is standing, nearest first. */
 export async function nearestAirports(point: GeoPoint, limit = 3): Promise<(AirportWithCoords & { distance_km: number })[]> {
   if (!supabase) {
@@ -44,6 +74,8 @@ export async function nearestAirports(point: GeoPoint, limit = 3): Promise<(Airp
   return data as (AirportWithCoords & { distance_km: number })[];
 }
 
+const TOO_MANY_REPORTS = 'You have sent a lot of price reports in the last hour. Please try again later.';
+
 export async function submitPrice(input: SubmissionInput): Promise<void> {
   if (!supabase) throw new Error('Price reports need the backend. Set EXPO_PUBLIC_SUPABASE_URL to enable them.');
   const userId = await ensureSession();
@@ -54,7 +86,12 @@ export async function submitPrice(input: SubmissionInput): Promise<void> {
     const { error } = await supabase.storage
       .from('submission-photos')
       .upload(photo_path, blob, { contentType: blob.type || 'image/jpeg' });
-    if (error) throw error;
+    // The bucket refuses files over 15 MB or that aren't images, and the upload
+    // policy allows 30 photos an hour (migration 20261113030000).
+    if (error) {
+      if (/row-level security/i.test(error.message)) throw new Error(TOO_MANY_REPORTS);
+      throw error;
+    }
   }
   const row = {
     submitted_by: userId,
@@ -82,6 +119,7 @@ export async function submitPrice(input: SubmissionInput): Promise<void> {
     const { via: _via, ...withoutVia } = row;
     ({ error } = await supabase.from('price_submissions').insert(withoutVia));
   }
+  if (error?.code === 'P0429') throw new Error(TOO_MANY_REPORTS);
   if (error) throw error;
 }
 

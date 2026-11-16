@@ -18,7 +18,7 @@ and see every liquor price at those airports' duty-free shops, converted to INR,
 - **Currency**: everything is converted to INR with daily ECB rates (Frankfurter).
 - **Stack**: Expo (React Native) for web/iOS/Android · Supabase (Postgres, Auth, Storage) · Python scrapers on GitHub Actions.
 
-Design docs: [HLD](docs/hld.md) · [LLD](docs/lld.md) · [Decisions (ADRs)](docs/adr/) · [Problems log](docs/problems-log.md)
+Design docs: [HLD](docs/hld.md) · [LLD](docs/lld.md) · [Decisions (ADRs)](docs/adr/) · [Problems log](docs/problems-log.md) · [Security model](docs/security.md)
 
 ## Run the app (no backend needed)
 ```bash

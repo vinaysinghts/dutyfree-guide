@@ -22,6 +22,9 @@ from .fetch import PoliteClient, RobotsDisallowed, SiteBlocked
 from .jsonld import products_from_jsonld
 
 
+# Terms, legal and API-access pages: a person has to read these before an adapter is
+# switched on (ADR-0004), and the probe is often the only thing that can reach the site.
+POLICY_LINK_RE = re.compile(r"terms|conditions|legal|privacy|policy|disclaimer|api|developer|affiliate|partner", re.I)
 LIQUOR_LINK_RE = re.compile(r"whisk|spirit|liquor|liqueur|wine|vodka|gin\b|rum\b|cognac|brandy|tequila|champagne", re.I)
 CARD_PROBES = ["li.product-item", ".product-item", "[data-product-id]", ".product-item-info", ".product-tile", ".product-card"]
 APP_STATE_MARKERS = ["__NEXT_DATA__", "__NUXT__", "window.__INITIAL_STATE__", "application/ld+json", "data-product", "ng-version"]
@@ -32,11 +35,14 @@ def diagnose(html: str, base_url: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
     classes = Counter(c for tag in soup.find_all(class_=True) for c in tag.get("class", []) if "product" in c.lower())
     links = {}
+    policy = {}
     for a in soup.find_all("a", href=True):
         text = a.get_text(" ", strip=True)[:60]
         href = a["href"]
         if LIQUOR_LINK_RE.search(href) or LIQUOR_LINK_RE.search(text):
             links.setdefault(href, text)
+        if POLICY_LINK_RE.search(href) or POLICY_LINK_RE.search(text):
+            policy.setdefault(href, text)
     card_counts = {sel: len(soup.select(sel)) for sel in CARD_PROBES}
     first_card = next((soup.select_one(sel) for sel in CARD_PROBES if soup.select_one(sel)), None)
     pager = soup.select_one(".pages, .pagination, .toolbar-products, nav[aria-label*=agination]")
@@ -53,8 +59,50 @@ def diagnose(html: str, base_url: str) -> dict:
         "markers": [m for m in APP_STATE_MARKERS if m in html],
         "product_classes": classes.most_common(12),
         "liquor_links": list(links.items())[:40],
+        "policy_links": list(policy.items())[:15],
         "text_start": soup.get_text(" ", strip=True)[:300],
+        # An empty page with a root <div> and bundles is a JavaScript app: the data comes later
+        # from an API, which is a different decision from reading HTML (ADR-0013, ADR-0016).
+        "scripts": [t.get("src") for t in soup.find_all("script", src=True)][:12],
+        "app_roots": [f"{t.name}#{t.get('id')}" for t in soup.find_all(id=True) if t.name in ("div", "app-root", "main")][:6],
+        "meta_generator": (soup.find("meta", attrs={"name": "generator"}) or {}).get("content") if soup.find("meta", attrs={"name": "generator"}) else None,
     }
+
+
+# Some platforms wrap each URL in CDATA: <loc><![CDATA[https://…]]></loc> (DXB, problems log #19).
+SITEMAP_LOC_RE = re.compile(r"<loc>\s*(?:<!\[CDATA\[)?\s*([^<\s\]]+)\s*(?:\]\]>)?\s*</loc>", re.I)
+
+
+def sitemap_summary(client, url: str, max_children: int = 3) -> dict:
+    """A site's own sitemap (named in its robots.txt) is an invitation to crawl those URLs.
+
+    Report child sitemaps, and liquor-looking URLs from at most `max_children` of the ones
+    whose names suggest products or categories, so real category paths come from the site
+    rather than from our guesses. Polite: goes through the client's delay and robots checks.
+    """
+    out: dict = {"sitemap": url}
+    try:
+        xml = client.get(url)
+    except Exception as e:  # diagnostics only
+        out.update(_error_details(e))
+        return out
+    locs = SITEMAP_LOC_RE.findall(xml)
+    # An empty or non-XML sitemap shows up here instead of as a silent "0 URLs".
+    out["bytes"] = len(xml)
+    out["head"] = re.sub(r"\s+", " ", xml[:300])
+    children = [u for u in locs if u.lower().endswith((".xml", ".xml.gz")) or "sitemap" in u.lower()]
+    out["children"] = children[:25]
+    pages = [u for u in locs if u not in children]
+    picked = [u for u in children if re.search(r"product|categor|liquor|spirit|catalog", u, re.I)][:max_children]
+    for child in picked:
+        try:
+            pages += SITEMAP_LOC_RE.findall(client.get(child))
+        except Exception as e:  # diagnostics only
+            out.setdefault("child_errors", {})[child] = _error_details(e)["outcome"]
+    out["urls_total"] = len(pages)
+    out["liquor_urls"] = [u for u in pages if LIQUOR_LINK_RE.search(u)][:40]
+    out["sample_urls"] = pages[:10]
+    return out
 
 
 def probe(adapter, client: PoliteClient, save_dir: Path, sample: int = 3, home: bool = True) -> list[dict]:
@@ -65,6 +113,8 @@ def probe(adapter, client: PoliteClient, save_dir: Path, sample: int = 3, home: 
             robots = client._client.get(adapter.base_url + "/robots.txt")
             print(json.dumps({"robots_url": str(robots.url), "status": robots.status_code,
                               "crawl_delay_s": client.delay, "robots_txt": robots.text[:1500]}), flush=True)
+            for sitemap in re.findall(r"(?im)^sitemap:\s*(\S+)", robots.text)[:2]:
+                print(json.dumps(sitemap_summary(client, sitemap), ensure_ascii=False), flush=True)
         except httpx.HTTPError:
             pass
         # The home page shows the site's real category URLs when ours are wrong.
@@ -100,6 +150,7 @@ def probe(adapter, client: PoliteClient, save_dir: Path, sample: int = 3, home: 
             if not products:
                 d = diagnose(html, adapter.base_url)
                 d.pop("liquor_links", None)
+                d.pop("policy_links", None)
                 row.update(d)
         report.append(row)
         print(json.dumps(row, ensure_ascii=False), flush=True)
